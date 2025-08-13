@@ -1,0 +1,46 @@
+{
+  "name": "gdrive-mcp-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server for Google Drive integration, deployable to Cloudflare Workers",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && wrangler types",
+    "dev": "wrangler dev --env dev",
+    "dev:mcp": "NODE_ENV=development node dist/index.js",
+    "deploy": "wrangler deploy",
+    "deploy:dev": "wrangler deploy --env dev",
+    "types": "wrangler types",
+    "test": "vitest",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "google-drive",
+    "google-docs",
+    "cloudflare-workers",
+    "ai",
+    "automation"
+  ],
+  "author": "Peter Garety",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.2",
+    "googleapis": "^144.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "wrangler": "^4.29.0",
+    "vitest": "^2.1.8",
+    "eslint": "^9.17.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.1",
+    "@typescript-eslint/parser": "^8.18.1",
+    "prettier": "^3.4.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

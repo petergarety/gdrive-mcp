@@ -1,0 +1,28 @@
+name = "gdrive-mcp-server"
+main = "dist/index.js"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Production env variables
+[vars]
+MCP_LOG_LEVEL = "INFO"
+GOOGLE_REDIRECT_URI = "https://gdrive-mcp-server.your-subdomain.workers.dev/callback"
+
+# Local development env variables
+[env.dev]
+name = "gdrive-mcp-server-dev"
+[env.dev.vars]
+MCP_LOG_LEVEL = "DEBUG"
+GOOGLE_REDIRECT_URI = "http://localhost:8787/callback"
+
+# KV namespace for OAuth token storage
+[[kv_namespaces]]
+binding = "TOKEN_STORE"
+id = "REPLACE_WITH_YOUR_TOKEN_KV_ID"
+preview_id = "REPLACE_WITH_YOUR_TOKEN_PREVIEW_ID"
+
+# KV namespace for caching (improves performance)
+[[kv_namespaces]]
+binding = "CACHE"
+id = "REPLACE_WITH_YOUR_CACHE_KV_ID"
+preview_id = "REPLACE_WITH_YOUR_CACHE_PREVIEW_ID"
