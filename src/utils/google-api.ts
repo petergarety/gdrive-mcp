@@ -1,4 +1,4 @@
-import { GoogleDocumentInfo, DocumentContent, DocUpdateRequest, DocCreateRequest } from '../types';
+import { GoogleDocumentInfo, DocumentContent, DocUpdateRequest, DocCreateRequest } from '../types/index.js';
 
 export class GoogleDocsAPI {
   private accessToken: string;

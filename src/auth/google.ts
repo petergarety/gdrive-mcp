@@ -1,5 +1,5 @@
-import { Env } from '../types';
-import { TokenManager } from './token-manager';
+import { GoogleDocumentInfo, DocumentContent, DocUpdateRequest, DocCreateRequest } from '../types/index.js';
+import { TokenManager } from './token-manager.js';
 
 export class GoogleAuth {
   private clientId: string;

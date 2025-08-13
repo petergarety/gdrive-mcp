@@ -4,9 +4,13 @@ export interface Env {
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_REDIRECT_URI: string;
   
+  // MCP Configuration
+  MCP_LOG_LEVEL: string;
+  NODE_ENV: string;
+  
   // KV Namespaces
   TOKEN_STORE: KVNamespace;  // For storing OAuth tokens
-  CACHE?: KVNamespace;       // For general caching
+  CACHE: KVNamespace;        // For general caching
 }
 
 export interface GoogleDocumentInfo {
