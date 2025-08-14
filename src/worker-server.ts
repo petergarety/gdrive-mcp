@@ -10,6 +10,7 @@ import { Env } from './types/index.js';
 import { GoogleAuth } from './auth/google.js';
 import { GoogleDocsAPI } from './utils/google-api.js';
 import { GDOCS_TOOLS } from './tools/index.js';
+import { getWelcomePage, getSuccessPage } from './utils/html-templates.js';
 
 /**
  * Cloudflare Workers HTTPS MCP Server
@@ -191,6 +192,13 @@ export class WorkerMCPServer {
   }
 
   async createUserSession(userId: string, oauthResult: any): Promise<string> {
+    const userEmail = oauthResult.user_info?.email;
+    
+    // Invalidate all existing API keys for this user before creating a new one
+    if (userEmail) {
+      await this.invalidateExistingApiKeys(userEmail);
+    }
+    
     const apiKey = this.generateSecureToken(); // Use existing method
     const userData = {
       userId,
@@ -202,12 +210,56 @@ export class WorkerMCPServer {
     };
     
     await this.env.TOKEN_STORE.put(`api:${apiKey}`, JSON.stringify(userData));
+    
+    // Also store a mapping from email to current API key for future invalidation
+    if (userEmail) {
+      await this.env.TOKEN_STORE.put(`email:${userEmail}`, apiKey);
+    }
+    
     return apiKey;
   }
 
   async getUserDataByApiKey(apiKey: string): Promise<any | null> {
     const data = await this.env.TOKEN_STORE.get(`api:${apiKey}`);
     return data ? JSON.parse(data) : null;
+  }
+
+  /**
+   * Invalidate all existing API keys for a user (by email)
+   */
+  async invalidateExistingApiKeys(userEmail: string): Promise<void> {
+    try {
+      // Method 1: Get the current API key from email mapping (if any)
+      const currentApiKey = await this.env.TOKEN_STORE.get(`email:${userEmail}`);
+      
+      if (currentApiKey) {
+        await this.env.TOKEN_STORE.delete(`api:${currentApiKey}`);
+        console.log(`Invalidated mapped API key for user: ${userEmail}`);
+      }
+
+      // Method 2: Scan all API keys to find ones belonging to this user
+      // This catches keys created before the email mapping system
+      const allKeys = await this.env.TOKEN_STORE.list({ prefix: 'api:' });
+      
+      for (const key of allKeys.keys) {
+        try {
+          const keyData = await this.env.TOKEN_STORE.get(key.name);
+          if (keyData) {
+            const userData = JSON.parse(keyData);
+            if (userData.userInfo?.email === userEmail) {
+              await this.env.TOKEN_STORE.delete(key.name);
+              console.log(`Invalidated orphaned API key: ${key.name} for user: ${userEmail}`);
+            }
+          }
+        } catch (parseError) {
+          console.error(`Error processing key ${key.name}:`, parseError);
+          // Continue processing other keys
+        }
+      }
+    } catch (error) {
+      console.error('Error invalidating existing API keys:', error);
+      // Don't throw - we don't want to block new key creation if cleanup fails
+    }
   }
 
   async ensureValidGoogleToken(userData: any): Promise<string> {
@@ -637,13 +689,13 @@ export default {
           const result = await googleAuth.completeOAuthFlow(code, userId);
           const apiKey = await server.createUserSession(userId, result);
 
-          return new Response(JSON.stringify({
-            message: 'Authentication successful! Use this API key in your MCP client:',
-            apiKey: apiKey,
-            instructions: 'Add this to your MCP client configuration'
-          }), {
+          // Get worker URL for the success page
+          const workerUrl = new URL(request.url).origin;
+          const successHtml = getSuccessPage(apiKey, workerUrl);
+
+          return new Response(successHtml, {
             headers: { 
-              'Content-Type': 'application/json',
+              'Content-Type': 'text/html',
               'Access-Control-Allow-Origin': '*',
             },
           });
@@ -688,18 +740,10 @@ export default {
         });
       }
       
-      // Default response
-      return new Response(JSON.stringify({
-        service: 'Google Docs MCP Worker',
-        version: '1.0.0',
-        endpoints: {
-          '/auth': 'Start OAuth flow',
-          '/callback': 'OAuth callback',
-          '/mcp': 'MCP endpoint (requires authentication)',
-          '/status': 'Health check',
-        },
-      }), {
-        headers: { 'Content-Type': 'application/json' },
+      // Default response - show welcome page
+      const welcomeHtml = getWelcomePage();
+      return new Response(welcomeHtml, {
+        headers: { 'Content-Type': 'text/html' },
       });
       
     } catch (error) {

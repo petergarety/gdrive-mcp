@@ -133,7 +133,7 @@ Choose your deployment method - these are **two completely separate approaches**
    ```
 
 8. **Get Your API Key**
-   Visit `https://your-worker-url/auth` to authenticate and get your API key for MCP clients.
+   Visit `https://your-worker-url/` to authenticate and get your API key for MCP clients.
 
 9. **Add to MCP Client Configuration**
    Add the following to your `~/.cursor/mcp.json` file:
@@ -267,16 +267,6 @@ Choose your deployment method - these are **two completely separate approaches**
 3. **API Key**: Long-lived API key for MCP client authentication
 4. **Auto Refresh**: Worker automatically refreshes Google tokens
 5. **HTTPS Transport**: MCP client connects via HTTPS with API key
-
-## 🌐 API Endpoints (Cloudflare Workers)
-
-| Endpoint | Method | Description |
-|----------|---------|-------------|
-| `/` | GET | Service info and available endpoints |
-| `/auth` | GET | Initiate OAuth flow |
-| `/callback` | GET | OAuth callback handler |
-| `/mcp` | POST | MCP protocol endpoint (requires auth) |
-| `/status` | GET | Health check |
 
 ## 🐛 Troubleshooting
 
