@@ -67,3 +67,4 @@ mcp-config.json
 # Test files that might contain sensitive data
 test-credentials/
 test-tokens/
+wrangler.toml
