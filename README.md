@@ -1,4 +1,4 @@
-# GDrive MCP Server by Peter Garety
+# GDrive MCP by Peter Garety
 
 A Model Context Protocol (MCP) server that provides AI assistants with secure access to your Google Docs. Run it locally for personal use or deploy it to Cloudflare Workers for global scale.
 
@@ -52,7 +52,7 @@ Choose your deployment method - these are **two completely separate approaches**
    - Create a service account in Google Cloud Console
    - Download the service account JSON key
    - Configure domain-wide delegation in Google Admin Console
-   - See [detailed setup steps](#google-workspace-setup) below
+   - See [detailed setup steps](#-google-workspace-setup) below
 
 3. **Setup Environment**
    ```bash
