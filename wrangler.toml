@@ -3,26 +3,17 @@ main = "dist/worker-server.js"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Production env variables
+# Environment variables
 [vars]
 MCP_LOG_LEVEL = "INFO"
 GOOGLE_REDIRECT_URI = "https://gdrive-mcp-server.pgp-personal.workers.dev/callback"
-
-# Local development env variables
-[env.dev]
-name = "gdrive-mcp-server-dev"
-[env.dev.vars]
-MCP_LOG_LEVEL = "DEBUG"
-GOOGLE_REDIRECT_URI = "http://localhost:8787/callback"
 
 # KV namespace for OAuth token storage
 [[kv_namespaces]]
 binding = "TOKEN_STORE"
 id = "fc3e14101e9b46a08d7ae66850eae21f"
-preview_id = "ea375c01860a483c80e29d0d4631ec8f"
 
 # KV namespace for caching (improves performance)
 [[kv_namespaces]]
 binding = "CACHE"
 id = "db63916d248d4bb28141d3f2146f1541"
-preview_id = "9366dba22efc4a20b1ae10340b1335c0"

@@ -197,7 +197,7 @@ export class WorkerMCPServer {
       apiKey,
       accessToken: oauthResult.access_token,
       refreshToken: oauthResult.refresh_token,
-      expiresAt: Date.now() + (3600 * 1000), // 1 hour default
+      expiresAt: Date.now() + ((oauthResult.expires_in || 3600) * 1000), // Use Google's expiration time
       userInfo: oauthResult.user_info
     };
     
@@ -211,11 +211,32 @@ export class WorkerMCPServer {
   }
 
   async ensureValidGoogleToken(userData: any): Promise<string> {
-    if (userData.expiresAt > Date.now()) {
+    // Check if current token is still valid (with 5-minute buffer)
+    const bufferTime = 5 * 60 * 1000; // 5 minutes in milliseconds
+    if (userData.expiresAt > Date.now() + bufferTime) {
       return userData.accessToken;
     }
-    // TODO: Implement token refresh
-    return userData.accessToken;
+    
+    // Token is expired or about to expire, attempt refresh
+    if (userData.refreshToken) {
+      try {
+        const newTokens = await this.googleAuth.refreshAccessToken(userData.refreshToken);
+        
+        // Update stored user data with new tokens
+        userData.accessToken = newTokens.access_token;
+        userData.expiresAt = Date.now() + (newTokens.expires_in * 1000);
+        
+        // Save updated user data back to KV store
+        await this.env.TOKEN_STORE.put(`api:${userData.apiKey}`, JSON.stringify(userData));
+        
+        return newTokens.access_token;
+      } catch (error) {
+        console.error('Token refresh failed:', error);
+        throw new Error('Google authentication expired and refresh failed. Please re-authenticate via /auth endpoint.');
+      }
+    }
+    
+    throw new Error('Google authentication expired and no refresh token available. Please re-authenticate via /auth endpoint.');
   }
 
   async handleMCPRequest(request: Request, accessToken: string): Promise<Response> {

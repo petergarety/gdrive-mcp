@@ -1,0 +1,16 @@
+name = "your-gdrive-mcp-server"
+main = "dist/worker-server.js"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+MCP_LOG_LEVEL = "INFO"
+GOOGLE_REDIRECT_URI = "https://your-worker-name.your-subdomain.workers.dev/callback"
+
+[[kv_namespaces]]
+binding = "TOKEN_STORE"
+id = "REPLACE_WITH_YOUR_TOKEN_STORE_ID"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "REPLACE_WITH_YOUR_CACHE_ID"
