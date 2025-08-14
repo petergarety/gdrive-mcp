@@ -1,17 +1,17 @@
-# GDrive MCP Server
+# GDrive MCP Server by Peter Garety
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that provides AI assistants with secure access to Google Docs. Deploy it to Cloudflare Workers for global scale or run it locally for personal use.
+A Model Context Protocol (MCP) server that provides AI assistants with secure access to your Google Docs. Run it locally for personal use or deploy it to Cloudflare Workers for global scale.
 
-## ✨ Features
+## ✨ Key Features
 
-- 🔐 **Secure OAuth2 Authentication** with Google
+- 🔐 **Service Account Authentication** with Google Workspace
 - 📖 **Read Google Docs** content and metadata  
 - ✏️ **Create and Update** documents
 - 🔍 **Search** through your documents
 - 📑 **Tab Support** - work with multi-tab documents
 - 📋 **Heading Navigation** - find and modify content under specific headings
 - ☁️ **Cloudflare Workers** deployment ready
-- 🖥️ **Local stdio** transport for Claude Desktop
+- 🖥️ **Local stdio** transport for Cursor and Claude Desktop
 - 🚀 **Fast and Scalable** serverless architecture
 - 🛡️ **Type-safe** TypeScript implementation
 
@@ -36,9 +36,9 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that p
 
 Choose your deployment method:
 
-### 🖥️ Local Development (MCP stdio for Claude Desktop)
+### 🖥️ Local Development (MCP stdio for Cursor or Claude Desktop users)
 
-Perfect for personal use with Claude Desktop:
+**Prerequisites**: You must be a Google Workspace admin for your domain.
 
 1. **Clone and Install**
    ```bash
@@ -47,34 +47,35 @@ Perfect for personal use with Claude Desktop:
    npm install
    ```
 
-2. **Setup Environment**
+2. **Setup Google Workspace Service Account**
+   - Create a service account in Google Cloud Console
+   - Download the service account JSON key
+   - Configure domain-wide delegation in Google Admin Console
+   - See [detailed setup steps](#google-workspace-setup) below
+
+3. **Setup Environment**
    ```bash
    cp env.example .env
-   # Edit .env with your Google OAuth credentials
+   # Edit .env and add:
+   # GOOGLE_SERVICE_ACCOUNT_PATH=/absolute/path/to/service-account.json
+   # GOOGLE_USER_EMAIL=your-email@yourdomain.com
    ```
-
-3. **Configure Google Cloud** (see [detailed steps](#google-cloud-setup))
-   - Enable Google Docs and Drive APIs
-   - Create OAuth 2.0 credentials
-   - Set redirect URI to `http://localhost:8787/callback`
 
 4. **Build and Run**
    ```bash
-   npm run build
-   npm run dev:mcp
+   npm run build:mcp
+   npm run start:mcp
    ```
 
-5. **Configure Claude Desktop**
+5. **Configure Cursor Desktop**
+   Add to your `~/.cursor/mcp.json`:
    ```json
    {
      "mcpServers": {
        "gdrive": {
          "command": "node",
-         "args": ["dist/index.js"],
-         "cwd": "/path/to/your/gdrive-mcp",
-         "env": {
-           "NODE_ENV": "development"
-         }
+         "args": ["/absolute/path/to/gdrive-mcp/dist/mcp-server.js"],
+         "cwd": "/absolute/path/to/gdrive-mcp"
        }
      }
    }
@@ -82,25 +83,20 @@ Perfect for personal use with Claude Desktop:
 
 ### ☁️ Cloudflare Workers Deployment
 
-Perfect for shared use or web applications:
+For shared use or web applications (uses OAuth 2.0):
 
 1. **Setup Cloudflare**
    ```bash
-   # Install Wrangler CLI
    npm install -g wrangler
-   
-   # Login to Cloudflare
    wrangler login
    ```
 
 2. **Configure KV Namespaces**
    ```bash
-   # Create KV namespaces for token storage
    wrangler kv:namespace create "TOKEN_STORE"
    wrangler kv:namespace create "TOKEN_STORE" --preview
    wrangler kv:namespace create "CACHE"
    wrangler kv:namespace create "CACHE" --preview
-   
    # Update wrangler.toml with the returned IDs
    ```
 
@@ -116,11 +112,11 @@ Perfect for shared use or web applications:
    wrangler deploy
    ```
 
-5. **Update OAuth Settings**
-   - Go to Google Cloud Console
-   - Update redirect URI to: `https://your-worker.workers.dev/callback`
+## 🔧 Google Workspace Setup
 
-## 🔧 Google Cloud Setup
+### For Local MCP (Service Account with Domain-wide Delegation)
+
+**Prerequisites**: You must be a Google Workspace admin for your domain.
 
 ### 1. Create Project and Enable APIs
 
@@ -130,7 +126,49 @@ Perfect for shared use or web applications:
    - [Google Docs API](https://console.cloud.google.com/apis/library/docs.googleapis.com)
    - [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com)
 
-### 2. Configure OAuth Consent Screen
+### 2. Create Service Account
+
+1. Go to **IAM & Admin > Service Accounts**
+2. Click **Create Service Account**
+3. Fill in details:
+   - Name: `gdrive-mcp-server`
+   - Description: `Service account for Google Docs MCP server`
+4. Click **Create and Continue**
+5. Skip role assignment (not needed for domain-wide delegation)
+6. Click **Done**
+
+### 3. Generate Service Account Key
+
+1. Click on your newly created service account
+2. Go to **Keys** tab
+3. Click **Add Key > Create new key**
+4. Choose **JSON** format
+5. Download the JSON file and save it securely (e.g., `service-account.json`)
+
+### 4. Configure Domain-wide Delegation
+
+#### Step A: Note the Client ID (Google Cloud Console)
+
+1. In your service account details, copy the **Client ID**
+
+#### Step B: Authorize Service Account (Google Admin Console)
+
+**Important**: You must be a Google Workspace admin for this step.
+
+1. Go to [Google Admin Console](https://admin.google.com/ac/owl/domainwidedelegation)
+2. Click **Add new**
+3. Enter the **Client ID** from Step A
+4. In **OAuth scopes**, enter **exactly**:
+   ```
+   https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/drive
+   ```
+   ⚠️ **Critical**: No spaces after the comma, exact URLs as shown
+5. Click **Authorize**
+6. **Wait 5-10 minutes** for changes to propagate
+
+### For Cloudflare Workers (OAuth 2.0)
+
+### 1. Configure OAuth Consent Screen
 
 1. Go to **APIs & Services > OAuth consent screen**
 2. Choose **External** user type
@@ -140,10 +178,10 @@ Perfect for shared use or web applications:
    - Developer contact: your email
 4. Add scopes:
    - `https://www.googleapis.com/auth/documents`
-   - `https://www.googleapis.com/auth/drive.readonly`
+   - `https://www.googleapis.com/auth/drive`
    - `openid`, `profile`, `email`
 
-### 3. Create OAuth Credentials
+### 2. Create OAuth Credentials
 
 1. Go to **APIs & Services > Credentials**
 2. Click **Create Credentials > OAuth 2.0 Client IDs**
@@ -164,13 +202,15 @@ Perfect for shared use or web applications:
 | `GOOGLE_REDIRECT_URI` | OAuth redirect URI | `.env` file | `wrangler.toml` |
 | `MCP_LOG_LEVEL` | Logging level | `.env` file | `wrangler.toml` |
 
-### Local Development Setup
+### Local MCP Setup
 
 Your `.env` file should look like:
 ```bash
-GOOGLE_CLIENT_ID=your-actual-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your-actual-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:8787/callback
+# Service Account with Domain-wide Delegation
+GOOGLE_SERVICE_ACCOUNT_PATH=/Users/yourname/gdrive-mcp/service-account.json
+GOOGLE_USER_EMAIL=yourname@yourcompany.com
+
+# Local development settings
 MCP_LOG_LEVEL=DEBUG
 NODE_ENV=development
 ```
@@ -193,46 +233,21 @@ preview_id = "your-preview-token-kv-namespace-id"
 
 ## 🎯 Usage Examples
 
-### Basic Document Operations
+### Basic Operations with Cursor
 
-```typescript
-// List documents
-await mcpClient.callTool("list_documents", { pageSize: 10 });
-
-// Read document content
-await mcpClient.callTool("get_document_text", { 
-  documentId: "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" 
-});
-
-// Create new document
-await mcpClient.callTool("create_document", {
-  title: "My New Document",
-  content: "Hello, world!"
-});
+```
+@gdrive List my Google Docs
+@gdrive Get document content for document ID: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms
+@gdrive Create a new document titled "Meeting Notes"
+@gdrive Search for documents containing "project"
 ```
 
 ### Advanced Features
 
-```typescript
-// Work with document tabs
-await mcpClient.callTool("get_document_tabs", {
-  documentId: "your-doc-id"
-});
-
-// Extract headings for navigation
-await mcpClient.callTool("get_document_headings", {
-  documentId: "your-doc-id",
-  includeText: true,
-  maxDepth: 3
-});
-
-// Add content under a specific heading
-await mcpClient.callTool("insert_content_under_heading", {
-  documentId: "your-doc-id",
-  headingText: "Project Status",
-  content: "✅ Task completed successfully",
-  insertMode: "append"
-});
+```
+@gdrive Get headings from document ID: your-doc-id
+@gdrive Get content under heading "Project Status" from document ID: your-doc-id  
+@gdrive Insert content under heading "Tasks" from document ID: your-doc-id with content "✅ Setup complete"
 ```
 
 ## 🔐 Authentication Flow
@@ -288,60 +303,67 @@ npm run test             # Run tests
 - Local: `http://localhost:8787/callback`
 - Production: `https://your-worker.workers.dev/callback`
 
-**"Authentication required" in MCP calls**
-- For Cloudflare Workers: Complete OAuth flow via `/auth` endpoint first
-- For local stdio: Check your `.env` file has correct credentials
+**"Tools not found" in Cursor**
+- Verify your `~/.cursor/mcp.json` file is correct
+- Check that absolute paths are used in the configuration
+- Restart Cursor after making configuration changes
+- Test the MCP server manually: `echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}' | npm run start:mcp`
 
-**"API Error: insufficient permissions"**
-- Verify Google Docs API and Drive API are enabled
-- Check OAuth consent screen has correct scopes
+**Build errors**
+- Use `npm run build:mcp` for local development (not `npm run build`)
+- TypeScript errors in worker files can be ignored for local MCP usage
 
 **KV namespace errors (Cloudflare)**
 - Run `wrangler kv:namespace create "TOKEN_STORE"`
 - Update `wrangler.toml` with the returned namespace ID
 
-**stdio transport error**
-- This happens in Cloudflare Workers environment
-- Use `npm run dev` for Workers, `npm run dev:mcp` for stdio
+**"unauthorized_client" error with service account**
+- Verify domain-wide delegation is configured in Google Admin Console
+- Check that OAuth scopes are exactly: `https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/drive`
+- Ensure `GOOGLE_USER_EMAIL` matches your Google Workspace domain
+- Wait 5-10 minutes after configuring domain-wide delegation
+
+**"Service account authentication failed"**
+- Check that `GOOGLE_SERVICE_ACCOUNT_PATH` points to the correct JSON file
+- Verify the service account JSON file is valid
+- Ensure you're a Google Workspace admin (domain-wide delegation requires admin access)
 
 ### Debug Mode
 
 Enable detailed logging:
 ```bash
-# Local development
-MCP_LOG_LEVEL=DEBUG npm run dev:mcp
-
-# Cloudflare Workers
-# Set MCP_LOG_LEVEL="DEBUG" in wrangler.toml
+# Set in your .env file
+MCP_LOG_LEVEL=DEBUG
 ```
 
 ### View Logs
 
 ```bash
+# Local MCP server logs appear in the terminal where you run:
+npm run start:mcp
+
 # Cloudflare Workers logs
 wrangler tail
-
-# Local development logs
-# Output appears in terminal where you ran npm run dev:mcp
 ```
 
 ## 🔒 Security Features
 
-- **OAuth2 Flow**: Secure authentication with Google
-- **Token Management**: Access tokens stored securely (KV for Workers, memory for local)
-- **HTTPS Only**: All communication over encrypted connections  
-- **Minimal Permissions**: Only requests necessary Google API scopes
-- **Session Management**: Secure session handling with expiration
-- **Request Logging**: Comprehensive audit trail
+- **Service Account Authentication**: Secure authentication with Google Workspace
+- **Domain-wide Delegation**: Admin-controlled access to organizational docs
+- **Token Management**: Secure handling of authentication tokens
 - **Input Validation**: All inputs validated and sanitized
+- **Minimal Permissions**: Only requests necessary Google API scopes
 
 ## 📊 Performance Features
 
 - **Large Document Handling**: Automatic chunking and streaming for big docs
 - **Request Timeouts**: Prevents hanging requests
 - **Memory Management**: Size limits and safe processing
-- **Caching**: Optional KV caching for improved performance
 - **Error Recovery**: Graceful handling of API failures
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🤝 Contributing
 

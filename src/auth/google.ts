@@ -7,7 +7,7 @@ export class GoogleAuth {
   private redirectUri: string;
   private tokenManager: TokenManager;
 
-  constructor(env: Env) {
+  constructor(env: Cloudflare.Env & { GOOGLE_CLIENT_ID: string; GOOGLE_CLIENT_SECRET: string }) {
     this.clientId = env.GOOGLE_CLIENT_ID;
     this.clientSecret = env.GOOGLE_CLIENT_SECRET;
     this.redirectUri = env.GOOGLE_REDIRECT_URI;

@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Load environment variables first
+import 'dotenv/config';
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -44,34 +47,30 @@ export class GoogleDocsMCPServer {
     this.setupHandlers();
   }
 
-  private async getAccessToken(): Promise<string> {
+  // Instead of pretending OAuth works, let's be honest:
+    private async getAccessToken(): Promise<string> {
     if (this.accessToken) {
       return this.accessToken;
     }
 
-    // Method 1: Service Account (recommended for MCP)
+    // Service Account with domain-wide delegation (ONLY method for local MCP)
     const serviceAccountPath = process.env.GOOGLE_SERVICE_ACCOUNT_PATH;
     const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-    
+
     if (serviceAccountPath || serviceAccountKey) {
       this.accessToken = await this.getServiceAccountToken(serviceAccountPath, serviceAccountKey);
       if (this.accessToken) return this.accessToken;
     }
 
-    // Method 2: OAuth Client Credentials (fallback)
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    
-    if (clientId && clientSecret) {
-      this.accessToken = await this.getClientCredentialsToken(clientId, clientSecret);
-      if (this.accessToken) return this.accessToken;
-    }
-
     throw new Error(
-      'No valid Google credentials found. Please provide either:\n' +
-      '1. GOOGLE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json\n' +
-      '2. GOOGLE_SERVICE_ACCOUNT_KEY={"type":"service_account",...}\n' +
-      '3. GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for OAuth'
+      'Service Account authentication required for local MCP.\n\n' +
+      'Required environment variables:\n' +
+      'GOOGLE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json\n' +
+      'GOOGLE_USER_EMAIL=your-email@gmail.com\n\n' +
+      'OR:\n' +
+      'GOOGLE_SERVICE_ACCOUNT_KEY={"type":"service_account",...}\n' +
+      'GOOGLE_USER_EMAIL=your-email@gmail.com\n\n' +
+      'You must also set up domain-wide delegation in Google Admin Console.'
     );
   }
 
@@ -91,18 +90,22 @@ export class GoogleDocsMCPServer {
         return null;
       }
 
-      // Use Google Auth Library for service account
-      const { GoogleAuth } = await import('google-auth-library');
-      const auth = new GoogleAuth({
-        credentials,
+      // Use JWT for service account with domain-wide delegation
+      const { JWT } = await import('google-auth-library');
+      
+      const userEmail = process.env.GOOGLE_USER_EMAIL;
+      
+      const jwtClient = new JWT({
+        email: credentials.client_email,
+        key: credentials.private_key,
         scopes: [
           'https://www.googleapis.com/auth/documents',
-          'https://www.googleapis.com/auth/drive.readonly',
+          'https://www.googleapis.com/auth/drive',
         ],
+        subject: userEmail, // This enables domain-wide delegation impersonation
       });
 
-      const authClient = await auth.getClient();
-      const tokenResponse = await authClient.getAccessToken();
+      const tokenResponse = await jwtClient.getAccessToken();
       
       return tokenResponse.token || null;
     } catch (error) {
@@ -111,18 +114,7 @@ export class GoogleDocsMCPServer {
     }
   }
 
-  private async getClientCredentialsToken(clientId: string, clientSecret: string): Promise<string | null> {
-    try {
-      // Note: This is a simplified approach. In practice, you might need a refresh token
-      // or implement the full OAuth flow once and store the refresh token
-      console.error('Warning: OAuth client credentials require initial setup with refresh token');
-      console.error('For production MCP usage, prefer service account authentication');
-      return null;
-    } catch (error) {
-      console.error('OAuth client credentials failed:', error);
-      return null;
-    }
-  }
+
 
   private setupHandlers(): void {
     // List available tools
