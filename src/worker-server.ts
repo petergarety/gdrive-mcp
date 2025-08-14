@@ -184,6 +184,169 @@ export class WorkerMCPServer {
     return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
   }
 
+  private generateApiKey(): string {
+    const array = new Uint8Array(64); // Longer key for API keys
+    crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  async createUserSession(userId: string, oauthResult: any): Promise<string> {
+    const apiKey = this.generateSecureToken(); // Use existing method
+    const userData = {
+      userId,
+      apiKey,
+      accessToken: oauthResult.access_token,
+      refreshToken: oauthResult.refresh_token,
+      expiresAt: Date.now() + (3600 * 1000), // 1 hour default
+      userInfo: oauthResult.user_info
+    };
+    
+    await this.env.TOKEN_STORE.put(`api:${apiKey}`, JSON.stringify(userData));
+    return apiKey;
+  }
+
+  async getUserDataByApiKey(apiKey: string): Promise<any | null> {
+    const data = await this.env.TOKEN_STORE.get(`api:${apiKey}`);
+    return data ? JSON.parse(data) : null;
+  }
+
+  async ensureValidGoogleToken(userData: any): Promise<string> {
+    if (userData.expiresAt > Date.now()) {
+      return userData.accessToken;
+    }
+    // TODO: Implement token refresh
+    return userData.accessToken;
+  }
+
+  async handleMCPRequest(request: Request, accessToken: string): Promise<Response> {
+    try {
+      const body = await request.json() as any;
+      
+      // Handle MCP JSON-RPC requests
+      if (body.jsonrpc === '2.0') {
+        const { method, params, id } = body;
+        
+        let result;
+        
+        switch (method) {
+          case 'initialize':
+            result = {
+              protocolVersion: '2024-11-05',
+              capabilities: {
+                tools: {
+                  listChanged: false,
+                },
+                resources: {},
+                prompts: {},
+                logging: {
+                  level: 'info',
+                },
+              },
+              serverInfo: {
+                name: 'gdrive-mcp-server-worker',
+                version: '1.0.0',
+              },
+            };
+            break;
+            
+          case 'tools/list':
+            result = {
+              tools: GDOCS_TOOLS,
+            };
+            break;
+            
+          case 'prompts/list':
+            result = {
+              prompts: [], // No prompts for this server
+            };
+            break;
+            
+          case 'resources/list':
+            result = {
+              resources: [], // No resources for this server
+            };
+            break;
+            
+          case 'tools/call':
+            const googleAPI = new GoogleDocsAPI(accessToken);
+            result = await this.callTool(googleAPI, params.name, params.arguments || {});
+            break;
+            
+          case 'notifications/initialized':
+            // Client has completed initialization - no response needed for notifications
+            return new Response('', { 
+              status: 204,
+              headers: { 'Access-Control-Allow-Origin': '*' }
+            });
+            
+          default:
+            throw new Error(`Unknown method: ${method}`);
+        }
+        
+        return new Response(JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result,
+        }), {
+          headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+      
+      throw new Error('Invalid MCP request format');
+      
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return new Response(JSON.stringify({
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32603,
+          message: `Internal error: ${message}`,
+        },
+      }), {
+        status: 500,
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+  }
+
+  private async callTool(api: GoogleDocsAPI, name: string, args: any) {
+    switch (name) {
+      case 'list_documents':
+        return await this.handleListDocuments(api, args);
+      case 'get_document':
+        return await this.handleGetDocument(api, args);
+      case 'get_document_text':
+        return await this.handleGetDocumentText(api, args);
+      case 'create_document':
+        return await this.handleCreateDocument(api, args);
+      case 'update_document':
+        return await this.handleUpdateDocument(api, args);
+      case 'search_documents':
+        return await this.handleSearchDocuments(api, args);
+      case 'get_document_info':
+        return await this.handleGetDocumentInfo(api, args);
+      case 'get_document_tabs':
+        return await this.handleGetDocumentTabs(api, args);
+      case 'get_document_headings':
+        return await this.handleGetDocumentHeadings(api, args);
+      case 'get_tab_content':
+        return await this.handleGetTabContent(api, args);
+      case 'get_content_under_heading':
+        return await this.handleGetContentUnderHeading(api, args);
+      case 'insert_content_under_heading':
+        return await this.handleInsertContentUnderHeading(api, args);
+      default:
+        throw new Error(`Unknown tool: ${name}`);
+    }
+  }
+
   // Tool handlers (same as MCP server - we can extract these to a shared module later)
   private async handleListDocuments(api: GoogleDocsAPI, args: any) {
     const documents = await api.listDocuments(args.pageSize, args.pageToken);
@@ -451,17 +614,12 @@ export default {
           const googleAuth = new GoogleAuth(env);
           const userId = server.generateUserId();
           const result = await googleAuth.completeOAuthFlow(code, userId);
-          
-          const sessionToken = await server.createSession(userId);
-          
+          const apiKey = await server.createUserSession(userId, result);
+
           return new Response(JSON.stringify({
-            message: 'Authentication successful',
-            sessionToken,
-            user: {
-              id: result.user_info.id,
-              email: result.user_info.email,
-              name: result.user_info.name,
-            },
+            message: 'Authentication successful! Use this API key in your MCP client:',
+            apiKey: apiKey,
+            instructions: 'Add this to your MCP client configuration'
           }), {
             headers: { 
               'Content-Type': 'application/json',
@@ -479,27 +637,23 @@ export default {
       }
       
       if (url.pathname === '/mcp') {
-        // MCP endpoint with session authentication
         const authHeader = request.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
           return new Response('Unauthorized', { status: 401 });
         }
         
-        const sessionToken = authHeader.slice(7);
-        const userId = await server.validateSession(sessionToken);
+        const apiKey = authHeader.slice(7);
+        const userData = await server.getUserDataByApiKey(apiKey);
         
-        if (!userId) {
-          return new Response('Invalid or expired session', { status: 401 });
+        if (!userData) {
+          return new Response('Invalid API key', { status: 401 });
         }
         
-        // Handle MCP request with authenticated user context
-        // TODO: Implement proper MCP-over-HTTP transport
-        return new Response(JSON.stringify({
-          message: 'MCP endpoint - implement transport layer',
-          userId,
-        }), {
-          headers: { 'Content-Type': 'application/json' },
-        });
+        // Ensure valid Google access token (refresh if needed)
+        const validToken = await server.ensureValidGoogleToken(userData);
+        
+        // Handle MCP protocol request
+        return await server.handleMCPRequest(request, validToken);
       }
       
       if (url.pathname === '/status') {
