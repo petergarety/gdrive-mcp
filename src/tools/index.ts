@@ -155,6 +155,7 @@ export const GDOCS_TOOLS: Tool[] = [
       required: ['documentId'],
     },
   },
+
   {
     name: 'get_document_headings',
     description: 'Extract document structure by listing all headings (H1, H2, H3, H4, H5, H6)',
@@ -181,29 +182,7 @@ export const GDOCS_TOOLS: Tool[] = [
       required: ['documentId'],
     },
   },
-  {
-    name: 'get_tab_content',
-    description: 'Get content from a specific tab in a Google Doc',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        documentId: {
-          type: 'string',
-          description: 'The ID of the Google Doc',
-        },
-        tabId: {
-          type: 'string',
-          description: 'The ID of the specific tab to retrieve',
-        },
-        textOnly: {
-          type: 'boolean',
-          description: 'Whether to return only plain text (default: true)',
-          default: true,
-        },
-      },
-      required: ['documentId', 'tabId'],
-    },
-  },
+
   {
     name: 'get_content_under_heading',
     description: 'Get all content that appears under a specific heading until the next heading of same or higher level',
@@ -234,43 +213,5 @@ export const GDOCS_TOOLS: Tool[] = [
       required: ['documentId', 'headingText'],
     },
   },
-  {
-    name: 'insert_content_under_heading',
-    description: 'Insert text content under a specific heading (append to existing content)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        documentId: {
-          type: 'string',
-          description: 'The ID of the Google Doc',
-        },
-        headingText: {
-          type: 'string',
-          description: 'The text of the heading to find',
-        },
-        content: {
-          type: 'string',
-          description: 'The content to insert under the heading',
-        },
-        headingLevel: {
-          type: 'number',
-          description: 'The heading level (1-6) for more precise matching',
-          minimum: 1,
-          maximum: 6,
-        },
-        insertMode: {
-          type: 'string',
-          enum: ['append', 'prepend', 'replace'],
-          description: 'Where to insert content relative to existing content (default: append)',
-          default: 'append',
-        },
-        addNewLine: {
-          type: 'boolean',
-          description: 'Whether to add a new line before the inserted content (default: true)',
-          default: true,
-        },
-      },
-      required: ['documentId', 'headingText', 'content'],
-    },
-  },
+
 ];

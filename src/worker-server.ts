@@ -108,12 +108,10 @@ export class WorkerMCPServer {
             return await this.handleGetDocumentTabs(googleAPI, args);
           case 'get_document_headings':
             return await this.handleGetDocumentHeadings(googleAPI, args);
-          case 'get_tab_content':
-            return await this.handleGetTabContent(googleAPI, args);
+
           case 'get_content_under_heading':
             return await this.handleGetContentUnderHeading(googleAPI, args);
-          case 'insert_content_under_heading':
-            return await this.handleInsertContentUnderHeading(googleAPI, args);
+
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
@@ -409,12 +407,10 @@ export class WorkerMCPServer {
         return await this.handleGetDocumentTabs(api, args);
       case 'get_document_headings':
         return await this.handleGetDocumentHeadings(api, args);
-      case 'get_tab_content':
-        return await this.handleGetTabContent(api, args);
+
       case 'get_content_under_heading':
         return await this.handleGetContentUnderHeading(api, args);
-      case 'insert_content_under_heading':
-        return await this.handleInsertContentUnderHeading(api, args);
+      
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -591,21 +587,7 @@ export class WorkerMCPServer {
     };
   }
 
-  private async handleGetTabContent(api: GoogleDocsAPI, args: any) {
-    if (!args.documentId || !args.tabId) {
-      throw new McpError(ErrorCode.InvalidParams, 'documentId and tabId are required');
-    }
-    
-    const result = await api.getTabContent(args.documentId, args.tabId, args.textOnly !== false);
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Tab: ${result.tabInfo.title}\n\n${result.textContent || 'No text content available'}`
-        }
-      ]
-    };
-  }
+
 
   private async handleGetContentUnderHeading(api: GoogleDocsAPI, args: any) {
     if (!args.documentId || !args.headingText) {
@@ -630,28 +612,7 @@ export class WorkerMCPServer {
     };
   }
 
-  private async handleInsertContentUnderHeading(api: GoogleDocsAPI, args: any) {
-    if (!args.documentId || !args.headingText || !args.content) {
-      throw new McpError(ErrorCode.InvalidParams, 'documentId, headingText, and content are required');
-    }
-    
-    const result = await api.insertContentUnderHeading(args.documentId, {
-      headingText: args.headingText,
-      content: args.content,
-      headingLevel: args.headingLevel,
-      insertMode: args.insertMode || 'append',
-      addNewLine: args.addNewLine !== false
-    });
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Content inserted successfully: ${result.operation}`
-        }
-      ]
-    };
-  }
+
 }
 
 // Cloudflare Workers fetch handler

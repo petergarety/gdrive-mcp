@@ -173,16 +173,84 @@ export class GoogleDocsAPI {
   }
 
   /**
-   * Update a Google Doc
+   * Update a Google Doc with improved error handling
    */
   async updateDocument(request: DocUpdateRequest): Promise<any> {
     const url = `https://docs.googleapis.com/v1/documents/${request.documentId}:batchUpdate`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify({
-        requests: request.requests,
-      }),
+    
+    // Transform MCP operations to Google Docs API format
+    const transformedRequests = request.requests.map((operation: any) => {
+      // Handle both MCP format (with type) and direct Google Docs API format
+      if (operation.insertText || operation.deleteContentRange || operation.replaceAllText) {
+        // Already in Google Docs API format, pass through
+        return operation;
+      }
+      
+      // Handle MCP format operations
+      const operationType = operation.type;
+      if (!operationType) {
+        console.error('Operation missing type:', operation);
+        throw new Error(`Operation missing type field. Received: ${JSON.stringify(operation)}`);
+      }
+      
+      switch (operationType) {
+        case 'insert_text':
+          return {
+            insertText: {
+              location: {
+                index: operation.index
+              },
+              text: operation.text
+            }
+          };
+        case 'delete_text':
+          return {
+            deleteContentRange: {
+              range: {
+                startIndex: operation.index,
+                endIndex: operation.endIndex || operation.index + 1
+              }
+            }
+          };
+        case 'replace_text':
+          return {
+            replaceAllText: {
+              replaceText: operation.text,
+              containsText: {
+                text: operation.oldText || '',
+                matchCase: true
+              }
+            }
+          };
+        case 'insert_paragraph_break':
+          return {
+            insertText: {
+              location: {
+                index: operation.index
+              },
+              text: '\n'
+            }
+          };
+        default:
+          throw new Error(`Unsupported operation type: ${operationType}`);
+      }
     });
+
+    // Use longer timeout for write operations and add retry logic
+    try {
+      return await this.makeRequest(url, {
+        method: 'POST',
+        body: JSON.stringify({
+          requests: transformedRequests,
+        }),
+      }, 60000); // 60 second timeout for writes
+    } catch (error) {
+      // If it's a timeout, provide a more helpful error message
+      if (error instanceof Error && error.message.includes('timeout')) {
+        throw new Error('Document update timed out - try with smaller content or simpler operations');
+      }
+      throw error;
+    }
   }
 
   /**
@@ -202,7 +270,7 @@ export class GoogleDocsAPI {
 
     return response.text();
   }
-
+  
   /**
    * Search for documents by name or content
    */
@@ -442,7 +510,7 @@ export class GoogleDocsAPI {
       throw new Error('Invalid document ID format');
     }
     
-    const url = `https://docs.googleapis.com/v1/documents/${documentId}`;
+    const url = `https://docs.googleapis.com/v1/documents/${documentId}?includeTabsContent=true`;
     const document = await this.makeRequest(url);
     
     // Extract tabs information from document structure
@@ -454,7 +522,7 @@ export class GoogleDocsAPI {
       for (const tab of document.tabs) {
         tabs.push({
           tabId: tab.tabId || `tab_${tabIndex}`,
-          title: tab.childTabs?.[0]?.title || tab.title || `Tab ${tabIndex + 1}`,
+          title: tab.tabProperties?.title || tab.title || `Tab ${tabIndex + 1}`,
           index: tabIndex,
         });
         tabIndex++;
@@ -488,117 +556,147 @@ export class GoogleDocsAPI {
   }> {
     const { includeText = true, maxDepth = 6 } = options;
     const headings: Array<{ level: number; text: string; index: number; id?: string }> = [];
-    let currentIndex = 0;
     
-    const processElement = (element: any, depth = 0): void => {
-      if (depth > 10) return; // Prevent infinite recursion
-      
-      if (element.paragraph) {
-        const paragraph = element.paragraph;
-        const style = paragraph.paragraphStyle;
-        
-        // Check if this is a heading based on named styles
-        if (style && style.namedStyleType) {
-          const styleType = style.namedStyleType;
-          let headingLevel = 0;
+    // Process main body content - iterate through all elements directly
+    if (document.body?.content) {
+      document.body.content.forEach((element: any) => {
+        // Check if this element is a paragraph
+        if (element.paragraph) {
+          const paragraph = element.paragraph;
+          const style = paragraph.paragraphStyle;
           
-          // Map Google Docs heading styles to levels
-          switch (styleType) {
-            case 'HEADING_1': headingLevel = 1; break;
-            case 'HEADING_2': headingLevel = 2; break;
-            case 'HEADING_3': headingLevel = 3; break;
-            case 'HEADING_4': headingLevel = 4; break;
-            case 'HEADING_5': headingLevel = 5; break;
-            case 'HEADING_6': headingLevel = 6; break;
-          }
-          
-          if (headingLevel > 0 && headingLevel <= maxDepth) {
-            let headingText = '';
+          // Check if this is a heading based on named styles
+          if (style && style.namedStyleType) {
+            const styleType = style.namedStyleType;
+            let headingLevel = 0;
             
-            if (includeText && paragraph.elements) {
-              headingText = paragraph.elements
-                .map((el: any) => el.textRun?.content || '')
-                .join('')
-                .trim();
+            // Map Google Docs heading styles to levels
+            switch (styleType) {
+              case 'TITLE': headingLevel = 1; break; // Treat TITLE as H1
+              case 'HEADING_1': headingLevel = 1; break;
+              case 'HEADING_2': headingLevel = 2; break;
+              case 'HEADING_3': headingLevel = 3; break;
+              case 'HEADING_4': headingLevel = 4; break;
+              case 'HEADING_5': headingLevel = 5; break;
+              case 'HEADING_6': headingLevel = 6; break;
             }
             
-            headings.push({
-              level: headingLevel,
-              text: headingText,
-              index: currentIndex,
-              id: paragraph.bullet?.listId, // If it has an ID
-            });
+            if (headingLevel > 0 && headingLevel <= maxDepth) {
+              let headingText = '';
+              
+              if (includeText && paragraph.elements) {
+                headingText = paragraph.elements
+                  .map((el: any) => el.textRun?.content || '')
+                  .join('')
+                  .trim();
+              }
+              
+              headings.push({
+                level: headingLevel,
+                text: headingText,
+                index: element.startIndex || 0, // Use character position from Google Docs API
+                id: style.headingId || undefined,
+              });
+            }
           }
-        }
-        
-        currentIndex++;
-      } else if (element.table) {
-        // Process table cells for headings
-        element.table.tableRows?.forEach((row: any) => {
-          row.tableCells?.forEach((cell: any) => {
-            cell.content?.forEach((cellElement: any) => {
-              processElement(cellElement, depth + 1);
+        } else if (element.table) {
+          // Process table cells for headings
+          element.table.tableRows?.forEach((row: any) => {
+            row.tableCells?.forEach((cell: any) => {
+              cell.content?.forEach((cellElement: any) => {
+                if (cellElement.paragraph) {
+                  const paragraph = cellElement.paragraph;
+                  const style = paragraph.paragraphStyle;
+                  
+                  if (style && style.namedStyleType) {
+                    const styleType = style.namedStyleType;
+                    let headingLevel = 0;
+                    
+                    switch (styleType) {
+                      case 'TITLE': headingLevel = 1; break;
+                      case 'HEADING_1': headingLevel = 1; break;
+                      case 'HEADING_2': headingLevel = 2; break;
+                      case 'HEADING_3': headingLevel = 3; break;
+                      case 'HEADING_4': headingLevel = 4; break;
+                      case 'HEADING_5': headingLevel = 5; break;
+                      case 'HEADING_6': headingLevel = 6; break;
+                    }
+                    
+                    if (headingLevel > 0 && headingLevel <= maxDepth) {
+                      let headingText = '';
+                      
+                      if (includeText && paragraph.elements) {
+                        headingText = paragraph.elements
+                          .map((el: any) => el.textRun?.content || '')
+                          .join('')
+                          .trim();
+                      }
+                      
+                      headings.push({
+                        level: headingLevel,
+                        text: headingText,
+                        index: element.startIndex || 0, // Use character position from Google Docs API
+                        id: style.headingId || undefined,
+                      });
+                    }
+                  }
+                }
+              });
             });
           });
-        });
-      }
-    };
+        }
+        // Skip other element types (sectionBreak, etc.) and continue
+      });
+    }
     
-    if (document.body?.content) {
-      document.body.content.forEach(processElement);
+    // Also process tabs if they exist
+    if (document.tabs) {
+      document.tabs.forEach((tab: any) => {
+        if (tab.documentTab?.body?.content) {
+          tab.documentTab.body.content.forEach((element: any, index: number) => {
+            if (element.paragraph) {
+              const paragraph = element.paragraph;
+              const style = paragraph.paragraphStyle;
+              
+              if (style && style.namedStyleType) {
+                const styleType = style.namedStyleType;
+                let headingLevel = 0;
+                
+                switch (styleType) {
+                  case 'TITLE': headingLevel = 1; break;
+                  case 'HEADING_1': headingLevel = 1; break;
+                  case 'HEADING_2': headingLevel = 2; break;
+                  case 'HEADING_3': headingLevel = 3; break;
+                  case 'HEADING_4': headingLevel = 4; break;
+                  case 'HEADING_5': headingLevel = 5; break;
+                  case 'HEADING_6': headingLevel = 6; break;
+                }
+                
+                if (headingLevel > 0 && headingLevel <= maxDepth) {
+                  let headingText = '';
+                  
+                  if (includeText && paragraph.elements) {
+                    headingText = paragraph.elements
+                      .map((el: any) => el.textRun?.content || '')
+                      .join('')
+                      .trim();
+                  }
+                  
+                  headings.push({
+                    level: headingLevel,
+                    text: headingText,
+                    index: index, // Use array index position
+                    id: style.headingId || undefined,
+                  });
+                }
+              }
+            }
+          });
+        }
+      });
     }
     
     return headings;
-  }
-
-  /**
-   * Get content from a specific tab
-   */
-  async getTabContent(documentId: string, tabId: string, textOnly: boolean = true): Promise<{
-    tabInfo: { tabId: string; title: string };
-    content: any;
-    textContent?: string;
-  }> {
-    if (!documentId || !/^[a-zA-Z0-9_-]+$/.test(documentId)) {
-      throw new Error('Invalid document ID format');
-    }
-    
-    // For now, we'll get the full document and extract the specific tab
-    // In future, Google may provide tab-specific endpoints
-    const document = await this.getDocument(documentId);
-    
-    // If it's the main tab or single-tab document
-    if (tabId === 'main' || !document.tabs) {
-      const textContent = textOnly ? this.extractTextFromDocument(document) : undefined;
-      
-      return {
-        tabInfo: {
-          tabId: 'main',
-          title: document.title,
-        },
-        content: textOnly ? undefined : document.body,
-        textContent,
-      };
-    }
-    
-    // Find the specific tab
-    const tab = document.tabs?.find((t: any) => t.tabId === tabId);
-    if (!tab) {
-      throw new Error(`Tab with ID '${tabId}' not found`);
-    }
-    
-    // Extract content from the specific tab
-    const tabContent = tab.documentTab || tab;
-    const textContent = textOnly ? this.extractTextFromDocument(tabContent) : undefined;
-    
-    return {
-      tabInfo: {
-        tabId: tab.tabId,
-        title: tab.title || `Tab ${tabId}`,
-      },
-      content: textOnly ? undefined : tabContent.body,
-      textContent,
-    };
   }
 
 /**
@@ -669,108 +767,26 @@ async getContentUnderHeading(documentId: string, options: {
   };
 }
 
-/**
- * Insert content under a specific heading
- */
-async insertContentUnderHeading(documentId: string, options: {
-  headingText: string;
-  content: string;
-  headingLevel?: number;
-  insertMode?: 'append' | 'prepend' | 'replace';
-  addNewLine?: boolean;
-}): Promise<{
-  success: boolean;
-  heading?: { level: number; text: string; index: number };
-  insertionIndex: number;
-  operation: string;
-}> {
-  const { headingText, content, headingLevel, insertMode = 'append', addNewLine = true } = options;
-  
-  // First, find the heading and existing content
-  const contentInfo = await this.getContentUnderHeading(documentId, {
-    headingText,
-    headingLevel,
-    matchMode: 'contains',
-  });
-
-  if (!contentInfo.found || !contentInfo.heading) {
-    throw new Error(`Heading "${headingText}" not found in document`);
-  }
-
-  // Calculate insertion point
-  let insertionIndex: number;
-  let finalContent = content;
-
-  if (insertMode === 'replace') {
-    // Replace all content under heading
-    const endIndex = contentInfo.nextHeadingIndex || this.getDocumentEndIndex(documentId);
-    insertionIndex = contentInfo.heading.index + 1;
-    
-    // First delete existing content, then insert new
-    await this.updateDocument({
-      documentId,
-      requests: [
-        {
-          deleteContentRange: {
-            range: {
-              startIndex: insertionIndex,
-              endIndex: endIndex,
-            },
-          },
-        },
-      ],
-    });
-  } else {
-    // Append or prepend
-    if (insertMode === 'prepend') {
-      insertionIndex = contentInfo.heading.index + 1;
-      finalContent = addNewLine ? `${content}\n` : content;
-    } else {
-      // Append - insert at the end of existing content
-      insertionIndex = contentInfo.nextHeadingIndex 
-        ? contentInfo.nextHeadingIndex 
-        : contentInfo.heading.index + 1 + (contentInfo.contentElements?.length || 0);
-      finalContent = addNewLine ? `\n${content}` : content;
-    }
-  }
-
-  // Insert the new content
-  await this.updateDocument({
-    documentId,
-    requests: [
-      {
-        insertText: {
-          location: { index: insertionIndex },
-          text: finalContent,
-        },
-      },
-    ],
-  });
-
-  return {
-    success: true,
-    heading: contentInfo.heading,
-    insertionIndex,
-    operation: `${insertMode}ed content under "${contentInfo.heading.text}" (H${contentInfo.heading.level})`,
-  };
-}
 
 /**
- * Helper: Extract content between specific indices
+ * Helper: Extract content between specific character positions
  */
-private extractContentBetweenIndices(document: DocumentContent, startIndex: number, endIndex?: number): any[] {
+private extractContentBetweenIndices(document: DocumentContent, startCharIndex: number, endCharIndex?: number): any[] {
   const elements: any[] = [];
-  let currentIndex = 0;
   
-  const processElement = (element: any): void => {
-    if (currentIndex >= startIndex && (endIndex === undefined || currentIndex < endIndex)) {
-      elements.push(element);
-    }
-    currentIndex++;
-  };
-
   if (document.body?.content) {
-    document.body.content.forEach(processElement);
+    document.body.content.forEach((element: any) => {
+      const elementStart = element.startIndex || 0;
+      const elementEnd = element.endIndex || elementStart;
+      
+      // Check if element overlaps with our target range
+      const isAfterStart = elementEnd > startCharIndex;
+      const isBeforeEnd = endCharIndex === undefined || elementStart < endCharIndex;
+      
+      if (isAfterStart && isBeforeEnd) {
+        elements.push(element);
+      }
+    });
   }
 
   return elements;
@@ -796,17 +812,56 @@ private extractTextFromElements(elements: any[]): string {
 }
 
 /**
- * Helper: Get document end index (approximate)
+ * Helper: Find element by character index
+ */
+private findElementByCharIndex(document: DocumentContent, charIndex: number): any {
+  if (document.body?.content) {
+    for (const element of document.body.content) {
+      const start = element.startIndex || 0;
+      const end = element.endIndex || start;
+      
+      if (charIndex >= start && charIndex < end) {
+        return element;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Helper: Get document end index (actual character position)
  */
 private async getDocumentEndIndex(documentId: string): Promise<number> {
   const document = await this.getDocument(documentId);
-  let maxIndex = 0;
+  let maxIndex = 1; // Documents start at index 1
   
-  // This is a simplified approach - in practice, you'd traverse the entire document
+  // Find the highest endIndex in the document
   if (document.body?.content) {
-    maxIndex = document.body.content.length;
+    for (const element of document.body.content) {
+      if (element.endIndex && element.endIndex > maxIndex) {
+        maxIndex = element.endIndex;
+      }
+    }
   }
   
   return maxIndex;
+}
+
+/**
+ * Simple text insertion at document end (for testing)
+ */
+async insertTextAtEnd(documentId: string, text: string): Promise<any> {
+  const endIndex = await this.getDocumentEndIndex(documentId);
+  
+  return this.updateDocument({
+    documentId,
+    requests: [
+      {
+        type: 'insert_text',
+        index: endIndex,
+        text: `\n\n${text}\n`
+      }
+    ]
+  });
 }
 }

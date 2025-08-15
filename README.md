@@ -17,20 +17,18 @@ A Model Context Protocol (MCP) server that provides AI assistants with secure ac
 
 ## 🛠️ Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `list_documents` | List Google Docs in your Drive |
-| `get_document` | Get full document content with formatting |
-| `get_document_text` | Get plain text content of a document |
-| `create_document` | Create a new Google Doc |
-| `update_document` | Update document content |
-| `search_documents` | Search documents by content or title |
-| `get_document_info` | Get document metadata |
-| `get_document_tabs` | List tabs in a document |
-| `get_document_headings` | Extract headings (H1-H6) from a document |
-| `get_tab_content` | Get content from a specific tab |
-| `get_content_under_heading` | Get content under a specific heading |
-| `insert_content_under_heading` | Insert text under a specific heading |
+| Tool | Description | Status |
+|------|-------------|--------|
+| `list_documents` | List Google Docs in your Drive 
+| `get_document` | Get full document content with formatting
+| `get_document_text` | Get plain text content of a document
+| `create_document` | Create a new Google Doc 
+| `update_document` | Update document content 
+| `search_documents` | Search documents by content or title
+| `get_document_info` | Get document metadata
+| `get_document_tabs` | List tabs in a document
+| `get_document_headings` | Extract headings (H1-H6) from a document
+| `get_content_under_heading` | Get content under a specific heading
 
 ## 🚀 Quick Start
 
@@ -233,25 +231,6 @@ Choose your deployment method - these are **two completely separate approaches**
 5. Authorized redirect URIs:
    - `https://your-worker.workers.dev/callback` (replace with your actual worker URL)
 
-
-## 🎯 Usage Examples
-
-### Basic Operations with Cursor
-
-```
-@gdrive List my Google Docs
-@gdrive Get document content for document ID: [insert id]
-@gdrive Create a new document titled "Meeting Notes"
-@gdrive Search for documents containing "project"
-```
-
-### Advanced Features
-
-```
-@gdrive Get headings from document ID: your-doc-id
-@gdrive Get content under heading "Project Status" from document ID: your-doc-id  
-@gdrive Insert content under heading "Tasks" from document ID: your-doc-id with content "✅ Setup complete"
-```
 
 ## 🔐 Authentication Flow
 

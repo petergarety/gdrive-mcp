@@ -1,7 +1,28 @@
 #!/usr/bin/env node
 
-// Load environment variables first
-import 'dotenv/config';
+// Load environment variables manually
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+try {
+  // Use the directory where this script is located, not process.cwd()
+  const scriptDir = resolve(new URL(import.meta.url).pathname, '../..');
+  const envPath = resolve(scriptDir, '.env');
+  const envContent = readFileSync(envPath, 'utf8');
+  
+  envContent.split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const [key, ...valueParts] = trimmed.split('=');
+      if (key && valueParts.length > 0) {
+        const value = valueParts.join('=').replace(/^["']|["']$/g, '');
+        process.env[key.trim()] = value;
+      }
+    }
+  });
+} catch (error) {
+  console.error('Failed to load .env file:', error);
+}
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -33,10 +54,10 @@ export class GoogleDocsMCPServer {
       {
         capabilities: {
           tools: {
-            listChanged: false,  // Our tools are static
+            listChanged: false,
           },
-          resources: {},  // We don't support MCP resources yet
-          prompts: {},    // We don't support MCP prompts yet
+          resources: {},
+          prompts: {},
           logging: {
             level: 'info',
           },
@@ -47,31 +68,61 @@ export class GoogleDocsMCPServer {
     this.setupHandlers();
   }
 
-  // Instead of pretending OAuth works, let's be honest:
-    private async getAccessToken(): Promise<string> {
+  /**
+   * Get Google API access token using Service Account with domain-wide delegation.
+   * This is the standard authentication method for server-to-server applications.
+   */
+  private async getAccessToken(): Promise<string> {
     if (this.accessToken) {
       return this.accessToken;
     }
 
-    // Service Account with domain-wide delegation (ONLY method for local MCP)
-    const serviceAccountPath = process.env.GOOGLE_SERVICE_ACCOUNT_PATH;
-    const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    try {
+      // Service Account with domain-wide delegation (ONLY method for local MCP)
+      const serviceAccountPath = process.env.GOOGLE_SERVICE_ACCOUNT_PATH;
+      const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+      const userEmail = process.env.GOOGLE_USER_EMAIL;
 
-    if (serviceAccountPath || serviceAccountKey) {
-      this.accessToken = await this.getServiceAccountToken(serviceAccountPath, serviceAccountKey);
+      // Check if we have the required environment variables
+      if (!serviceAccountPath && !serviceAccountKey) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          `Missing service account credentials. Found in .env:\n` +
+          `GOOGLE_SERVICE_ACCOUNT_PATH: ${serviceAccountPath ? 'SET' : 'NOT SET'}\n` +
+          `GOOGLE_SERVICE_ACCOUNT_KEY: ${serviceAccountKey ? 'SET' : 'NOT SET'}\n` +
+          `GOOGLE_USER_EMAIL: ${userEmail ? 'SET' : 'NOT SET'}`
+        );
+      }
+
+      if (!userEmail) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          'GOOGLE_USER_EMAIL environment variable is required'
+        );
+      }
+
+      // Try to get service account token with timeout
+      const tokenPromise = this.getServiceAccountToken(serviceAccountPath, serviceAccountKey);
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Authentication timeout after 10 seconds')), 10000)
+      );
+
+      this.accessToken = await Promise.race([tokenPromise, timeoutPromise]);
       if (this.accessToken) return this.accessToken;
-    }
 
-    throw new Error(
-      'Service Account authentication required for local MCP.\n\n' +
-      'Required environment variables:\n' +
-      'GOOGLE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json\n' +
-      'GOOGLE_USER_EMAIL=your-email@gmail.com\n\n' +
-      'OR:\n' +
-      'GOOGLE_SERVICE_ACCOUNT_KEY={"type":"service_account",...}\n' +
-      'GOOGLE_USER_EMAIL=your-email@gmail.com\n\n' +
-      'You must also set up domain-wide delegation in Google Admin Console.'
-    );
+      throw new McpError(
+        ErrorCode.InternalError,
+        'Failed to obtain access token from service account'
+      );
+    } catch (error) {
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 
   private async getServiceAccountToken(path?: string, keyJson?: string): Promise<string | null> {
@@ -181,14 +232,10 @@ export class GoogleDocsMCPServer {
           case 'get_document_headings':
             return await this.handleGetDocumentHeadings(googleAPI, args);
 
-          case 'get_tab_content':
-            return await this.handleGetTabContent(googleAPI, args);
-          
           case 'get_content_under_heading':
             return await this.handleGetContentUnderHeading(googleAPI, args);
 
-          case 'insert_content_under_heading':
-            return await this.handleInsertContentUnderHeading(googleAPI, args);
+
           
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
@@ -200,7 +247,7 @@ export class GoogleDocsMCPServer {
     });
   }
 
-  // Tool handlers (simplified versions - we'll copy from existing implementation)
+  // Tool handlers
   private async handleListDocuments(api: GoogleDocsAPI, args: any) {
     const documents = await api.listDocuments(args.pageSize, args.pageToken);
     return {
@@ -381,21 +428,7 @@ export class GoogleDocsMCPServer {
     };
   }
 
-  private async handleGetTabContent(api: GoogleDocsAPI, args: any) {
-    if (!args.documentId || !args.tabId) {
-      throw new McpError(ErrorCode.InvalidParams, 'documentId and tabId are required');
-    }
-    
-    const result = await api.getTabContent(args.documentId, args.tabId, args.textOnly !== false);
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Tab: ${result.tabInfo.title}\n\n${result.textContent || 'No text content available'}`
-        }
-      ]
-    };
-  }
+
 
   private async handleGetContentUnderHeading(api: GoogleDocsAPI, args: any) {
     if (!args.documentId || !args.headingText) {
@@ -415,29 +448,6 @@ export class GoogleDocsMCPServer {
           text: result.found 
             ? `Content under heading "${args.headingText}":\n\n${result.content}`
             : `Heading "${args.headingText}" not found in document`
-        }
-      ]
-    };
-  }
-
-  private async handleInsertContentUnderHeading(api: GoogleDocsAPI, args: any) {
-    if (!args.documentId || !args.headingText || !args.content) {
-      throw new McpError(ErrorCode.InvalidParams, 'documentId, headingText, and content are required');
-    }
-    
-    const result = await api.insertContentUnderHeading(args.documentId, {
-      headingText: args.headingText,
-      content: args.content,
-      headingLevel: args.headingLevel,
-      insertMode: args.insertMode || 'append',
-      addNewLine: args.addNewLine !== false
-    });
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Content inserted successfully: ${result.operation}`
         }
       ]
     };
