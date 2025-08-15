@@ -16,7 +16,8 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "types": [
-      "@types/node"
+      "@types/node",
+      "./worker-configuration"
     ],
     "lib": [
       "ES2022",

@@ -107,33 +107,39 @@ Choose your deployment method - these are **two completely separate approaches**
    # - Add the KV namespace IDs from step 2
    ```   
 
-4. **Initial Deploy (to get worker URL)**
+4. **Generate TypeScript Types**
+   ```bash
+   npx wrangler types
+   ```
+   This creates `worker-configuration.d.ts` with proper TypeScript types for your Cloudflare environment.
+
+5. **Initial Deploy (to get worker URL)**
    ```bash
    npm run build
    npx wrangler deploy
    ```
    Note the worker URL (e.g., `https://gdrive-mcp-server.your-subdomain.workers.dev`)
 
-5. **Update Configuration**
+6. **Update Configuration**
    - Update `GOOGLE_REDIRECT_URI` in `wrangler.toml` with your actual worker URL
    - Configure Google OAuth in Cloud Console with the real callback URL (see [OAuth setup instructions](#for-cloudflare-workers-oauth-20))
 
-6. **Set OAuth Secrets**
+7. **Set OAuth Secrets**
    ```bash
    npx wrangler secret put GOOGLE_CLIENT_ID
    npx wrangler secret put GOOGLE_CLIENT_SECRET
    ```
 
-7. **Final Deploy**
+8. **Final Deploy**
    ```bash
    npm run build
    npx wrangler deploy
    ```
 
-8. **Get Your API Key**
+9. **Get Your API Key**
    Visit `https://your-worker-url/` to authenticate and get your API key for MCP clients.
 
-9. **Add to MCP Client Configuration**
+10. **Add to MCP Client Configuration**
    Add the following to your `~/.cursor/mcp.json` file:
    ```json
    {
@@ -141,7 +147,7 @@ Choose your deployment method - these are **two completely separate approaches**
        "gdriveCF": {
          "url": "https://your-worker-url/mcp",
          "headers": {
-           "Authorization": "Bearer YOUR_API_KEY_FROM_STEP_7"
+           "Authorization": "Bearer YOUR_API_KEY_FROM_STEP_9"
          }
        }
      }
@@ -149,7 +155,7 @@ Choose your deployment method - these are **two completely separate approaches**
    ```
    Replace:
    - `your-worker-url` with your actual worker URL
-   - `YOUR_API_KEY_FROM_STEP_7` with the API key from the previous step
+   - `YOUR_API_KEY_FROM_STEP_9` with the API key from the previous step.
    
    Restart Cursor and you can now use `@gdriveCF` commands!
 
