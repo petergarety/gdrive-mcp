@@ -17,8 +17,8 @@ A Model Context Protocol (MCP) server that provides AI assistants with secure ac
 
 ## 🛠️ Available Tools
 
-| Tool | Description | Status |
-|------|-------------|--------|
+| Tool | Description |
+|------|-------------|
 | `list_documents` | List Google Docs in your Drive 
 | `get_document` | Get full document content with formatting
 | `get_document_text` | Get plain text content of a document
