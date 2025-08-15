@@ -7,9 +7,10 @@ A Model Context Protocol (MCP) server that provides AI assistants with secure ac
 - 📖 **Read Google Docs** content and metadata  
 - ✏️ **Create and Update** documents
 - 🔍 **Search** through your documents
-- 📑 **Tab Support** - work with multi-tab documents
-- 📋 **Heading Navigation** - find and modify content under specific headings
-- 🔐 **Service Account Authentication** with Google Workspace
+- 📑 **Tab Detection** - identify tabs in multi-tab documents
+- 📋 **Heading Extraction** - extract document structure (H1-H6)
+- 📄 **Content Retrieval** - get content under specific headings
+- 🔐 **Dual Authentication** - Service Account (local) + OAuth (cloud)
 - ☁️ **Cloudflare Workers** deployment ready
 - 🖥️ **Local stdio** transport for Cursor and Claude Desktop
 - 🚀 **Fast and Scalable** serverless architecture
