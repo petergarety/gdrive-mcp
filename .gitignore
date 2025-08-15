@@ -33,6 +33,7 @@ Thumbs.db
 # Cloudflare Workers
 .wrangler/
 wrangler.toml.bak
+worker-configuration.d.ts
 
 # Logs
 logs/

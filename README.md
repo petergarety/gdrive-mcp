@@ -116,7 +116,7 @@ Choose your deployment method - these are **two completely separate approaches**
 
 5. **Update Configuration**
    - Update `GOOGLE_REDIRECT_URI` in `wrangler.toml` with your actual worker URL
-   - Configure Google OAuth in Cloud Console with the real callback URL
+   - Configure Google OAuth in Cloud Console with the real callback URL (see [OAuth setup instructions](#for-cloudflare-workers-oauth-20))
 
 6. **Set OAuth Secrets**
    ```bash
