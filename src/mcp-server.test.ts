@@ -1,13 +1,14 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { config as loadEnv } from 'dotenv';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { GoogleDocsAPI } from './utils/google-api.js';
+import { registerSectionToolTests } from './sectionReplacement.test-support.js';
 
 const fixture = vi.hoisted(() => ({ envPath: '' }));
 
@@ -55,7 +56,7 @@ describe('stdio environment loading', () => {
 describe('stdio tool dispatch regressions', () => {
   let client: Client;
   let sdkServer: Server;
-  let authenticate: ReturnType<typeof vi.fn>;
+  let authenticate: MockInstance<() => Promise<string>>;
 
   beforeEach(async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unexpected network access in test'));
@@ -80,6 +81,12 @@ describe('stdio tool dispatch regressions', () => {
       vi.restoreAllMocks();
       expect(networkCalls).toBe(0);
     }
+  });
+
+  registerSectionToolTests({
+    call: args => client.callTool({ name: 'replace_section', arguments: args }),
+    list: async () => (await client.listTools()).tools,
+    authenticated: () => authenticate,
   });
 
   it.each(['missing_tool', 'constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf'])(

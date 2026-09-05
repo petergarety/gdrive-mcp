@@ -2,6 +2,8 @@
 
 A Model Context Protocol (MCP) server that provides AI assistants with secure access to your Google Docs. Run it locally for personal use or deploy it to Cloudflare Workers for global scale.
 
+Project status and remaining work: [Roadmap](docs/ROADMAP.md). Section replacement workflow: [Preview and apply a section edit](docs/SECTION_EDITING.md).
+
 ## ✨ Key Features
 
 - 📖 **Read Google Docs** content and metadata  
@@ -30,6 +32,9 @@ A Model Context Protocol (MCP) server that provides AI assistants with secure ac
 | `get_document_tabs` | List tabs in a document
 | `get_document_headings` | Extract headings (H1-H6) from a document
 | `get_content_under_heading` | Get content under a specific heading
+| `replace_section` | Preview or apply a revision-checked, tab-scoped plain-text section replacement |
+
+`replace_section` is provided in this source tree but is not in the deployed `b69cce4` baseline. It defaults to preview; applying requires `dryRun: false` and a recent `requiredRevisionId`. Replacement includes subheadings and does not preserve formatting. Read the [section editing guide](docs/SECTION_EDITING.md) before use; live Google document validation and deployment approval remain outstanding.
 
 ## 🚀 Quick Start
 

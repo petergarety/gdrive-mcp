@@ -1,4 +1,5 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { REPLACE_SECTION_TOOL } from './replaceSection.js';
 
 export const GDOCS_TOOLS: Tool[] = [
   {
@@ -264,5 +265,5 @@ export const GDOCS_TOOLS: Tool[] = [
       ],
     },
   },
-
+  REPLACE_SECTION_TOOL,
 ];

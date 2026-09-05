@@ -9,6 +9,7 @@ import { getDocumentInfo } from './getDocumentInfo.js';
 import { getDocumentTabs } from './getDocumentTabs.js';
 import { getDocumentHeadings } from './getDocumentHeadings.js';
 import { getContentUnderHeading } from './getContentUnderHeading.js';
+import { replaceSection } from './replaceSection.js';
 
 /**
  * Registry mapping MCP tool names (as declared in GDOCS_TOOLS) to their
@@ -31,6 +32,7 @@ export const HANDLERS: Record<string, ToolHandler<any>> = {
   get_document_tabs: getDocumentTabs,
   get_document_headings: getDocumentHeadings,
   get_content_under_heading: getContentUnderHeading,
+  replace_section: replaceSection,
 };
 
 export type { ToolHandler, ToolResponse } from './types.js';

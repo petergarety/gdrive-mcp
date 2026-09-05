@@ -231,7 +231,8 @@ try {
       await check('Installed MCP SDK connects and lists tools over HTTP', async () => {
         await client.connect(transport, { timeout: 5000 });
         const tools = await client.listTools();
-        assert.equal(tools.tools.length, 10);
+        assert.equal(tools.tools.length, 11);
+        assert(tools.tools.some(tool => tool.name === 'replace_section'));
         return `${tools.tools.length} tools listed`;
       });
       await check('SDK receives MethodNotFound for inherited tool key', async () => {

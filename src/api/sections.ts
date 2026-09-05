@@ -7,7 +7,7 @@ import { findSection } from './headings.js';
 import { hasSuggestions, requireRevision, selectWriteTab } from './structure.js';
 
 export const ReplaceSectionSchema = z.object({
-  documentId: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+  documentId: z.string().regex(/^[a-zA-Z0-9_-]+$(?![\s\S])/),
   tabId: z.string().min(1).optional(),
   headingId: z.string().min(1).optional(),
   headingText: z.string().min(1).optional(),

@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { ReplaceSectionSchema } from '../api/sections.js';
+
+export { ReplaceSectionSchema };
+export type { ReplaceSectionArgs } from '../api/sections.js';
 
 /**
  * Runtime validation + TypeScript types for every tool's arguments.
@@ -94,6 +98,7 @@ export const SCHEMAS = {
   get_document_tabs: GetDocumentTabsSchema,
   get_document_headings: GetDocumentHeadingsSchema,
   get_content_under_heading: GetContentUnderHeadingSchema,
+  replace_section: ReplaceSectionSchema,
 } as const;
 
 export type SchemaName = keyof typeof SCHEMAS;

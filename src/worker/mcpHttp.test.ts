@@ -92,7 +92,7 @@ describe('HTTP tool dispatch regressions', () => {
     };
     vi.spyOn(GoogleDocsAPI.prototype, 'getDocument').mockResolvedValue(tabbed);
     const response = await handleMCPRequest(toolRequest('get_document', { documentId: document.documentId }), 'test-token');
-    const body = await response.json();
+    const body = await response.json() as { result: { content: Array<{ text: string }> } };
     expect(JSON.parse(body.result.content[0].text)).toEqual(tabbed);
   });
 
@@ -106,7 +106,7 @@ describe('HTTP tool dispatch regressions', () => {
     };
     vi.spyOn(GoogleDocsAPI.prototype, 'getDocumentTabs').mockResolvedValue(listing);
     const response = await handleMCPRequest(toolRequest('get_document_tabs', { documentId: document.documentId }), 'test-token');
-    const body = await response.json();
+    const body = await response.json() as { result: { content: Array<{ text: string }> } };
     expect(JSON.parse(body.result.content[0].text)).toEqual(listing);
   });
 
@@ -154,6 +154,7 @@ describe('HTTP tool dispatch regressions', () => {
   it('reports oversized extraction as an error instead of a partial successful tool result', async () => {
     vi.spyOn(GoogleDocsAPI.prototype, 'getDocumentSafe').mockResolvedValue({
       useFallback: false,
+      warnings: [],
       metadata: {
         id: document.documentId,
         name: document.title,
@@ -326,7 +327,7 @@ describe('MCP HTTP transport regressions', () => {
     client.onerror = (error) => errors.push(error);
     try {
       await client.connect(transport, { timeout: 1000 });
-      expect((await client.listTools()).tools).toHaveLength(10);
+      expect((await client.listTools()).tools).toHaveLength(11);
       expect(await client.ping()).toEqual({});
       for (const name of ['missing_tool', 'constructor', '__proto__']) {
         await expect(client.callTool({ name, arguments: {} })).rejects.toMatchObject({
