@@ -1,4 +1,4 @@
-import { GoogleDocumentInfo, DocumentContent, DocUpdateRequest, DocCreateRequest, Env } from '../types/index.js';
+import { Env } from '../types/index.js';
 import { TokenManager } from './token-manager.js';
 
 export class GoogleAuth {
