@@ -100,6 +100,49 @@ describe('stdio tool dispatch regressions', () => {
     expect(authenticate).not.toHaveBeenCalled();
   });
 
+  it('returns the full tabbed document and revision through stdio', async () => {
+    const tabbed = {
+      documentId: 'test-document', title: 'Test document', revisionId: 'read-revision',
+      tabs: [{
+        tabProperties: { tabId: 'parent', title: 'Parent' },
+        documentTab: { body: { content: [] } },
+        childTabs: [{
+          tabProperties: { tabId: 'child', title: 'Child' },
+          documentTab: { body: { content: [{ startIndex: 1, endIndex: 7, paragraph: { elements: [{ textRun: { content: 'child\n' } }] } }] } },
+        }],
+      }],
+    };
+    vi.spyOn(GoogleDocsAPI.prototype, 'getDocument').mockResolvedValue(tabbed);
+    const result = await client.callTool({ name: 'get_document', arguments: { documentId: tabbed.documentId } });
+    expect(result).toMatchObject({ content: [{ type: 'text', text: JSON.stringify(tabbed, null, 2) }] });
+  });
+
+  it.each([
+    [{ tabId: 'parent', title: 'Parent', index: 0, depth: 0 }, { tabId: 'child', title: 'Child', index: 0, depth: 1, parentTabId: 'parent' }],
+    [{ tabId: null, title: 'Legacy', index: 0, depth: 0 }],
+  ])('returns complete tab metadata through stdio: %j', async (...tabs) => {
+    const listing = {
+      documentId: 'test-document', revisionId: 'read-revision', totalTabs: tabs.length, tabs,
+    };
+    vi.spyOn(GoogleDocsAPI.prototype, 'getDocumentTabs').mockResolvedValue(listing);
+    const result = await client.callTool({ name: 'get_document_tabs', arguments: { documentId: listing.documentId } });
+    expect(result).toMatchObject({ content: [{ type: 'text', text: JSON.stringify(listing, null, 2) }] });
+  });
+
+  it('preserves tab and caller revision through stdio validation and dispatch', async () => {
+    const update = vi.spyOn(GoogleDocsAPI.prototype, 'updateDocument').mockResolvedValue({ documentId: 'test-document', replies: [{}] });
+    const operations = [{ type: 'insert_text', index: 1, text: 'hello' }];
+    const result = await client.callTool({
+      name: 'update_document',
+      arguments: { documentId: 'test-document', tabId: 'child', requiredRevisionId: 'read-revision', operations },
+    });
+    expect(result).toMatchObject({ content: [{ type: 'text', text: expect.stringContaining('Document updated successfully') }] });
+    expect(update).toHaveBeenCalledWith({
+      documentId: 'test-document', tabId: 'child', requiredRevisionId: 'read-revision', requests: operations,
+    });
+    expect(authenticate).toHaveBeenCalledOnce();
+  });
+
   it('still authenticates and executes registered tools with valid arguments', async () => {
     const getDocument = vi.spyOn(GoogleDocsAPI.prototype, 'getDocument').mockResolvedValue({
       documentId: 'test-document',

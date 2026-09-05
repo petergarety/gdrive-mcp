@@ -22,7 +22,7 @@ export const GDOCS_TOOLS: Tool[] = [
   },
   {
     name: 'get_document',
-    description: 'Get the full content of a specific Google Doc',
+    description: 'Get a Google Doc including all nested tabs and revisionId (when the caller has edit access). Use tab-local UTF-16 indices for updates.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -36,13 +36,17 @@ export const GDOCS_TOOLS: Tool[] = [
   },
   {
     name: 'get_document_text',
-    description: 'Get the plain text content of a Google Doc',
+    description: 'Get plain text from one tab or all tab bodies in preorder, with revisionId when available. Export fallback is unavailable when tabId is specified.',
     inputSchema: {
       type: 'object',
       properties: {
         documentId: {
           type: 'string',
           description: 'The ID of the Google Doc to retrieve text from',
+        },
+        tabId: {
+          type: 'string',
+          description: 'Optional tab ID from get_document_tabs; omit to read all tab bodies',
         },
       },
       required: ['documentId'],
@@ -68,7 +72,7 @@ export const GDOCS_TOOLS: Tool[] = [
   },
   {
     name: 'update_document',
-    description: 'Update a Google Doc with new content',
+    description: 'Apply 1-100 text operations in order. Read first and supply requiredRevisionId to reject stale edits. Multi-tab documents require tabId. Indices are UTF-16 offsets within that tab; each operation sees the result of preceding operations. Never retry blindly after a timeout.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -76,9 +80,19 @@ export const GDOCS_TOOLS: Tool[] = [
           type: 'string',
           description: 'The ID of the Google Doc to update',
         },
+        tabId: {
+          type: 'string',
+          description: 'Target tab ID; mandatory for multi-tab documents',
+        },
+        requiredRevisionId: {
+          type: 'string',
+          description: 'Revision from your latest read. If omitted for compatibility, only changes after the server read are guarded, not changes since your earlier read.',
+        },
         operations: {
           type: 'array',
           description: 'Array of update operations to perform',
+          minItems: 1,
+          maxItems: 100,
           items: {
             type: 'object',
             properties: {
@@ -88,19 +102,40 @@ export const GDOCS_TOOLS: Tool[] = [
                 description: 'Type of operation to perform',
               },
               index: {
-                type: 'number',
-                description: 'Position in document to perform operation (0-based)',
+                type: 'integer',
+                minimum: 1,
+                description: 'Tab-local UTF-16 index; body text starts at 1. Required except for replace_text.',
               },
               text: {
                 type: 'string',
+                maxLength: 200000,
                 description: 'Text to insert or replacement text',
               },
+              oldText: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 200000,
+                description: 'Non-empty text to match for replace_text within the selected tab',
+              },
+              matchCase: {
+                type: 'boolean',
+                default: true,
+                description: 'Case-sensitive replacement matching',
+              },
               endIndex: {
-                type: 'number',
-                description: 'End position for replace/delete operations',
+                type: 'integer',
+                minimum: 1,
+                description: 'Exclusive end index for delete_text; defaults to index + 1',
               },
             },
-            required: ['type', 'index'],
+            required: ['type'],
+            additionalProperties: false,
+            oneOf: [
+              { properties: { type: { const: 'insert_text' } }, required: ['index', 'text'] },
+              { properties: { type: { const: 'replace_text' } }, required: ['oldText', 'text'] },
+              { properties: { type: { const: 'delete_text' } }, required: ['index'] },
+              { properties: { type: { const: 'insert_paragraph_break' } }, required: ['index'] },
+            ],
           },
         },
       },
@@ -143,7 +178,7 @@ export const GDOCS_TOOLS: Tool[] = [
   },
   {
     name: 'get_document_tabs',
-    description: 'Get information about tabs (sheets) in a Google Doc',
+    description: 'List Google Docs tabs, including nested children in preorder, with real tab IDs, hierarchy and revisionId. Legacy body-only responses have a null tabId.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -158,13 +193,17 @@ export const GDOCS_TOOLS: Tool[] = [
 
   {
     name: 'get_document_headings',
-    description: 'Extract document structure by listing all headings (H1, H2, H3, H4, H5, H6)',
+    description: 'List document headings with heading IDs, tab IDs, UTF-16 indices and revisionId; TITLE is treated as level 1. Filter by tabId to avoid ambiguity.',
     inputSchema: {
       type: 'object',
       properties: {
         documentId: {
           type: 'string',
           description: 'The ID of the Google Doc to analyze',
+        },
+        tabId: {
+          type: 'string',
+          description: 'Optional tab ID; omit to list headings from all tabs',
         },
         includeText: {
           type: 'boolean',
@@ -185,13 +224,21 @@ export const GDOCS_TOOLS: Tool[] = [
 
   {
     name: 'get_content_under_heading',
-    description: 'Get all content that appears under a specific heading until the next heading of same or higher level',
+    description: 'Read a section until the next heading of equal or higher level within its tab. Provide exactly one of headingId or headingText. Ambiguous matches and headings inside tables are rejected. Returns tab and revision metadata.',
     inputSchema: {
       type: 'object',
       properties: {
         documentId: {
           type: 'string',
           description: 'The ID of the Google Doc',
+        },
+        tabId: {
+          type: 'string',
+          description: 'Optional tab ID to disambiguate repeated headings',
+        },
+        headingId: {
+          type: 'string',
+          description: 'Heading ID from get_document_headings; use instead of headingText',
         },
         headingText: {
           type: 'string',
@@ -210,7 +257,11 @@ export const GDOCS_TOOLS: Tool[] = [
           default: 'contains',
         },
       },
-      required: ['documentId', 'headingText'],
+      required: ['documentId'],
+      oneOf: [
+        { required: ['headingId'], not: { required: ['headingText'] } },
+        { required: ['headingText'], not: { required: ['headingId'] } },
+      ],
     },
   },
 

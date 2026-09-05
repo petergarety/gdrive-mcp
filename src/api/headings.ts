@@ -1,208 +1,81 @@
-import { DocumentContent } from '../types/index.js';
+import type { DocumentContent } from '../types/index.js';
 import { ApiClient } from './client.js';
-import { getDocumentSafe } from './documents.js';
+import { getDocument } from './documents.js';
 import { extractTextFromElements } from './textExtraction.js';
-import {
-  Heading,
-  NamedStyleType,
-  Paragraph,
-  StructuralElement,
-} from './types.js';
+import { selectTabs } from './structure.js';
+import type { Heading, StructuralElement } from './types.js';
 
-/**
- * Map a Google Docs named style type to a heading level (1-6),
- * or 0 if the style is not a heading.
- */
-function namedStyleToLevel(styleType: NamedStyleType | undefined): number {
-  switch (styleType) {
-    case 'TITLE':
-    case 'HEADING_1':
-      return 1;
-    case 'HEADING_2':
-      return 2;
-    case 'HEADING_3':
-      return 3;
-    case 'HEADING_4':
-      return 4;
-    case 'HEADING_5':
-      return 5;
-    case 'HEADING_6':
-      return 6;
-    default:
-      return 0;
-  }
+export interface HeadingOptions {
+  headingText?: string;
+  headingId?: string;
+  headingLevel?: number;
+  matchMode?: 'exact' | 'contains' | 'starts_with';
+  tabId?: string;
 }
 
-/**
- * If `paragraph` is a heading within `maxDepth`, return its Heading record.
- * Returns null otherwise. Consolidates the triple-duplicated logic that
- * previously lived in body/table/tabs scanning.
- */
-function paragraphToHeading(
-  paragraph: Paragraph,
-  index: number,
-  options: { includeText: boolean; maxDepth: number },
-): Heading | null {
-  const style = paragraph.paragraphStyle;
-  const level = namedStyleToLevel(style?.namedStyleType);
-  if (level === 0 || level > options.maxDepth) return null;
-
-  let text = '';
-  if (options.includeText && paragraph.elements) {
-    text = paragraph.elements
-      .map((el) => el.textRun?.content ?? '')
-      .join('')
-      .trim();
-  }
-
-  return {
-    level,
-    text,
-    index,
-    id: style?.headingId,
-  };
-}
-
-/**
- * Walk a flat content array and collect headings. Recurses one level into
- * tables to catch headings nested in table cells.
- */
-function collectHeadingsFromContent(
-  content: StructuralElement[] | undefined,
-  options: { includeText: boolean; maxDepth: number; useArrayIndex?: boolean },
-  out: Heading[],
-): void {
-  if (!content) return;
-
-  content.forEach((element, arrayIndex) => {
-    const charIndex = options.useArrayIndex ? arrayIndex : element.startIndex ?? 0;
-
-    if (element.paragraph) {
-      const heading = paragraphToHeading(element.paragraph, charIndex, options);
-      if (heading) out.push(heading);
-      return;
-    }
-
-    if (element.table) {
-      element.table.tableRows?.forEach((row) => {
-        row.tableCells?.forEach((cell) => {
-          collectHeadingsFromContent(cell.content, options, out);
-        });
-      });
-    }
-  });
-}
-
-/**
- * Walk a document and pull out all headings up to `maxDepth`.
- */
 export function extractHeadingsFromDocument(
   document: DocumentContent,
-  options: { includeText?: boolean; maxDepth?: number } = {},
+  options: { includeText?: boolean; maxDepth?: number; tabId?: string } = {},
 ): Heading[] {
-  const includeText = options.includeText ?? true;
-  const maxDepth = options.maxDepth ?? 6;
   const headings: Heading[] = [];
-
-  collectHeadingsFromContent(
-    document.body?.content as StructuralElement[] | undefined,
-    { includeText, maxDepth },
-    headings,
-  );
-
-  document.tabs?.forEach((tab: any) => {
-    collectHeadingsFromContent(
-      tab.documentTab?.body?.content as StructuralElement[] | undefined,
-      { includeText, maxDepth, useArrayIndex: true },
-      headings,
-    );
-  });
-
+  for (const tab of selectTabs(document, options.tabId)) {
+    const visit = (elements: StructuralElement[], inTable = false, depth = 0): void => {
+      if (depth > 20) throw new Error('Document structure too deeply nested');
+      for (const element of elements) {
+        const style = element.paragraph?.paragraphStyle;
+        const match = /^HEADING_([1-6])$/.exec(style?.namedStyleType ?? '');
+        const level = style?.namedStyleType === 'TITLE' ? 1 : Number(match?.[1] ?? 0);
+        if (level && level <= (options.maxDepth ?? 6)) {
+          if (!Number.isInteger(element.startIndex)) throw new Error('Heading has no valid character index');
+          headings.push({
+            level, text: options.includeText === false ? '' : (element.paragraph?.elements ?? []).map(el => el.textRun?.content ?? '').join('').trim(),
+            index: element.startIndex!, endIndex: element.endIndex, id: style?.headingId,
+            tabId: tab.tabId, tabTitle: tab.title, inTable,
+          });
+        }
+        for (const row of element.table?.tableRows ?? []) {
+          for (const cell of row.tableCells ?? []) visit(cell.content ?? [], true, depth + 1);
+        }
+      }
+    };
+    visit(tab.content);
+  }
   return headings;
 }
 
-/**
- * Filter content elements that overlap the [startCharIndex, endCharIndex) range.
- */
-function extractContentBetweenIndices(
-  document: DocumentContent,
-  startCharIndex: number,
-  endCharIndex?: number,
-): StructuralElement[] {
-  const elements: StructuralElement[] = [];
-  document.body?.content?.forEach((element: any) => {
-    const elementStart = element.startIndex ?? 0;
-    const elementEnd = element.endIndex ?? elementStart;
-    const isAfterStart = elementEnd > startCharIndex;
-    const isBeforeEnd = endCharIndex === undefined || elementStart < endCharIndex;
-    if (isAfterStart && isBeforeEnd) elements.push(element);
+export function findSection(document: DocumentContent, options: HeadingOptions) {
+  if (!options.headingText && !options.headingId) throw new Error('Provide headingText or headingId');
+  const headings = extractHeadingsFromDocument(document, { tabId: options.tabId });
+  const search = options.headingText?.toLowerCase();
+  const matches = headings.filter(h => {
+    if (options.headingLevel && h.level !== options.headingLevel) return false;
+    if (options.headingId) return h.id === options.headingId;
+    const text = h.text.toLowerCase();
+    if (options.matchMode === 'exact') return text === search;
+    if (options.matchMode === 'starts_with') return text.startsWith(search!);
+    return text.includes(search!);
   });
-  return elements;
+  if (matches.length > 1) throw new Error('Ambiguous heading. Use tabId and a unique headingId from get_document_headings.');
+  if (!matches.length) return undefined;
+  const heading = matches[0];
+  if (heading.inTable) throw new Error('Heading-based sections inside table cells are not supported');
+  if (!Number.isInteger(heading.endIndex)) throw new Error('Heading has no valid endIndex');
+  const tab = selectTabs(document, heading.tabId)[0];
+  const next = headings.find(h => h.tabId === heading.tabId && !h.inTable && h.index > heading.index && h.level <= heading.level);
+  const boundary = next?.index ?? tab.content.at(-1)?.endIndex;
+  if (!Number.isInteger(boundary)) throw new Error('Cannot determine section boundary');
+  const elements = tab.content.filter(el => (el.startIndex ?? 0) >= heading.endIndex! && (el.startIndex ?? 0) < boundary!);
+  return { heading, tab, startIndex: heading.endIndex!, boundary: boundary!, nextHeadingIndex: next?.index, elements };
 }
 
-/**
- * Find a heading by text/level/match-mode and return the content that lives
- * between it and the next heading of the same or higher level.
- */
-export async function getContentUnderHeading(
-  client: ApiClient,
-  documentId: string,
-  options: {
-    headingText: string;
-    headingLevel?: number;
-    matchMode?: 'exact' | 'contains' | 'starts_with';
-  },
-): Promise<{
-  found: boolean;
-  heading?: Heading;
-  content: string;
-  contentElements?: StructuralElement[];
-  nextHeadingIndex?: number;
-}> {
-  const { headingText, headingLevel, matchMode = 'contains' } = options;
-
-  const result = await getDocumentSafe(client, documentId);
-  if (result.useFallback) {
-    throw new Error('Document too large for heading-based operations');
-  }
-
-  const document = result.document!;
-  const headings = extractHeadingsFromDocument(document, { includeText: true });
-
-  const search = headingText.toLowerCase();
-  const targetHeading = headings.find((h) => {
-    if (headingLevel && h.level !== headingLevel) return false;
-    const ht = h.text.toLowerCase();
-    switch (matchMode) {
-      case 'exact':
-        return ht === search;
-      case 'starts_with':
-        return ht.startsWith(search);
-      case 'contains':
-      default:
-        return ht.includes(search);
-    }
-  });
-
-  if (!targetHeading) {
-    return { found: false, content: '' };
-  }
-
-  const nextHeading = headings.find(
-    (h) => h.index > targetHeading.index && h.level <= targetHeading.level,
-  );
-
-  const startIndex = targetHeading.index + 1;
-  const endIndex = nextHeading ? nextHeading.index : undefined;
-
-  const contentElements = extractContentBetweenIndices(document, startIndex, endIndex);
-  const content = extractTextFromElements(contentElements);
-
+export async function getContentUnderHeading(client: ApiClient, documentId: string, options: HeadingOptions) {
+  const document = await getDocument(client, documentId);
+  const section = findSection(document, options);
+  const metadata = { documentId, revisionId: document.revisionId };
+  if (!section) return { ...metadata, found: false, content: '' };
   return {
-    found: true,
-    heading: targetHeading,
-    content: content.trim(),
-    contentElements,
-    nextHeadingIndex: nextHeading?.index,
+    ...metadata, found: true, heading: section.heading,
+    content: extractTextFromElements(section.elements), contentElements: section.elements,
+    startIndex: section.startIndex, endIndex: section.boundary, nextHeadingIndex: section.nextHeadingIndex,
   };
 }

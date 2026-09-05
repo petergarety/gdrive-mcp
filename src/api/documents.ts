@@ -1,5 +1,7 @@
 import { GoogleDocumentInfo, DocumentContent, DocCreateRequest, DocUpdateRequest } from '../types/index.js';
 import { ApiClient } from './client.js';
+import { requireRevision, selectWriteTab } from './structure.js';
+import { transformOperations } from './operations.js';
 import {
   DOCUMENT_ID_PATTERN,
   MAX_DOCUMENT_SIZE,
@@ -7,7 +9,7 @@ import {
   WRITE_TIMEOUT_MS,
 } from './constants.js';
 
-function assertValidDocumentId(documentId: string): void {
+export function assertValidDocumentId(documentId: string): void {
   if (!documentId || !DOCUMENT_ID_PATTERN.test(documentId)) {
     throw new Error('Invalid document ID format');
   }
@@ -48,6 +50,7 @@ export async function getDocumentInfo(
   client: ApiClient,
   documentId: string,
 ): Promise<GoogleDocumentInfo> {
+  assertValidDocumentId(documentId);
   const url = `https://www.googleapis.com/drive/v3/files/${documentId}?fields=id,name,mimeType,createdTime,modifiedTime,webViewLink,size,parents`;
   return client.request<GoogleDocumentInfo>(url);
 }
@@ -86,7 +89,9 @@ export async function getDocument(
 ): Promise<DocumentContent> {
   assertValidDocumentId(documentId);
   await checkDocumentSize(client, documentId);
-  const url = `https://docs.googleapis.com/v1/documents/${documentId}`;
+  // Google's default is inline for editors, but still permits viewer-only reads.
+  // Writes below require a revisionId, which Google only returns to editors.
+  const url = `https://docs.googleapis.com/v1/documents/${documentId}?includeTabsContent=true`;
   return client.request<DocumentContent>(url, {}, READ_TIMEOUT_MS);
 }
 
@@ -141,71 +146,36 @@ export async function updateDocument(
   client: ApiClient,
   request: DocUpdateRequest,
 ): Promise<BatchUpdateResponse> {
-  const url = `https://docs.googleapis.com/v1/documents/${request.documentId}:batchUpdate`;
+  const document = await getDocument(client, request.documentId);
+  const revision = requireRevision(document, request.requiredRevisionId);
+  const tab = selectWriteTab(document, request.tabId);
+  const transformedRequests = transformOperations(request.requests, tab.tabId);
+  return guardedBatchUpdate(client, request.documentId, transformedRequests, revision);
+}
 
-  const transformedRequests = request.requests.map((operation: any) => {
-    // Already in Google Docs API format.
-    if (operation.insertText || operation.deleteContentRange || operation.replaceAllText) {
-      return operation;
-    }
-
-    const operationType = operation.type;
-    if (!operationType) {
-      console.error('Operation missing type:', operation);
-      throw new Error(`Operation missing type field. Received: ${JSON.stringify(operation)}`);
-    }
-
-    switch (operationType) {
-      case 'insert_text':
-        return {
-          insertText: {
-            location: { index: operation.index },
-            text: operation.text,
-          },
-        };
-      case 'delete_text':
-        return {
-          deleteContentRange: {
-            range: {
-              startIndex: operation.index,
-              endIndex: operation.endIndex ?? operation.index + 1,
-            },
-          },
-        };
-      case 'replace_text':
-        return {
-          replaceAllText: {
-            replaceText: operation.text,
-            containsText: {
-              text: operation.oldText ?? '',
-              matchCase: true,
-            },
-          },
-        };
-      case 'insert_paragraph_break':
-        return {
-          insertText: {
-            location: { index: operation.index },
-            text: '\n',
-          },
-        };
-      default:
-        throw new Error(`Unsupported operation type: ${operationType}`);
-    }
-  });
-
+/** Internal-only writer: never retries a write or silently rebases stale indices. */
+export async function guardedBatchUpdate(
+  client: ApiClient,
+  documentId: string,
+  requests: Array<Record<string, unknown>>,
+  requiredRevisionId: string,
+): Promise<BatchUpdateResponse> {
+  assertValidDocumentId(documentId);
+  if (!requiredRevisionId) throw new Error('Refusing a write without a revisionId');
+  if (!requests.length) return { documentId, replies: [] };
+  const url = `https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`;
   try {
     return await client.request<BatchUpdateResponse>(
       url,
       {
         method: 'POST',
-        body: JSON.stringify({ requests: transformedRequests }),
+        body: JSON.stringify({ requests, writeControl: { requiredRevisionId } }),
       },
       WRITE_TIMEOUT_MS,
     );
   } catch (error) {
     if (error instanceof Error && error.message.includes('timeout')) {
-      throw new Error('Document update timed out - try with smaller content or simpler operations');
+      throw new Error('Document update timed out; outcome unknown. Re-read the document before retrying.');
     }
     throw error;
   }

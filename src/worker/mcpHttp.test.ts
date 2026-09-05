@@ -78,6 +78,79 @@ describe('HTTP tool dispatch regressions', () => {
     expect(getDocument).toHaveBeenCalledWith(document.documentId);
   });
 
+  it('returns the full tabbed document and revision through HTTP', async () => {
+    const tabbed: DocumentContent = {
+      documentId: document.documentId, title: document.title, revisionId: 'read-revision',
+      tabs: [{
+        tabProperties: { tabId: 'parent', title: 'Parent' },
+        documentTab: { body: { content: [] } },
+        childTabs: [{
+          tabProperties: { tabId: 'child', title: 'Child' },
+          documentTab: { body: { content: [{ startIndex: 1, endIndex: 7, paragraph: { elements: [{ textRun: { content: 'child\n' } }] } }] } },
+        }],
+      }],
+    };
+    vi.spyOn(GoogleDocsAPI.prototype, 'getDocument').mockResolvedValue(tabbed);
+    const response = await handleMCPRequest(toolRequest('get_document', { documentId: document.documentId }), 'test-token');
+    const body = await response.json();
+    expect(JSON.parse(body.result.content[0].text)).toEqual(tabbed);
+  });
+
+  it('returns tab hierarchy and revision metadata through HTTP', async () => {
+    const listing = {
+      documentId: document.documentId, revisionId: 'read-revision', totalTabs: 2,
+      tabs: [
+        { tabId: 'parent', title: 'Parent', index: 0, depth: 0 },
+        { tabId: 'child', title: 'Child', index: 0, depth: 1, parentTabId: 'parent' },
+      ],
+    };
+    vi.spyOn(GoogleDocsAPI.prototype, 'getDocumentTabs').mockResolvedValue(listing);
+    const response = await handleMCPRequest(toolRequest('get_document_tabs', { documentId: document.documentId }), 'test-token');
+    const body = await response.json();
+    expect(JSON.parse(body.result.content[0].text)).toEqual(listing);
+  });
+
+  it('preserves tab and caller revision through HTTP validation and dispatch', async () => {
+    const update = vi.spyOn(GoogleDocsAPI.prototype, 'updateDocument').mockResolvedValue({ documentId: document.documentId, replies: [{}] });
+    const operations = [{ type: 'insert_text', index: 1, text: 'hello' }];
+    const response = await handleMCPRequest(toolRequest('update_document', {
+      documentId: document.documentId, tabId: 'child', requiredRevisionId: 'read-revision', operations,
+    }), 'test-token');
+    expect(await response.json()).toHaveProperty('result');
+    expect(update).toHaveBeenCalledWith({ documentId: document.documentId, tabId: 'child', requiredRevisionId: 'read-revision', requests: operations });
+  });
+
+  it('passes selected tabs to text extraction and returns the read revision', async () => {
+    vi.spyOn(GoogleDocsAPI.prototype, 'getDocumentSafe').mockResolvedValue({
+      useFallback: false, warnings: [], document,
+      metadata: { id: document.documentId, name: document.title, mimeType: 'application/vnd.google-apps.document', createdTime: '', modifiedTime: '', webViewLink: '' },
+    });
+    const extract = vi.spyOn(GoogleDocsAPI.prototype, 'extractTextFromDocument').mockReturnValue('selected text');
+    const response = await handleMCPRequest(toolRequest('get_document_text', { documentId: document.documentId, tabId: 'child' }), 'test-token');
+    expect(await response.json()).toMatchObject({ result: { content: [{ text: expect.stringContaining('Revision: test-revision') }] } });
+    expect(extract).toHaveBeenCalledWith(document, 'child');
+  });
+
+  it('does not export another tab when a selected-tab read needs fallback', async () => {
+    vi.spyOn(GoogleDocsAPI.prototype, 'getDocumentSafe').mockResolvedValue({
+      useFallback: true, warnings: [],
+      metadata: { id: document.documentId, name: document.title, mimeType: 'application/vnd.google-apps.document', createdTime: '', modifiedTime: '', webViewLink: '' },
+    });
+    const exportText = vi.spyOn(GoogleDocsAPI.prototype, 'exportLargeDocumentAsText').mockResolvedValue('wrong tab');
+    const response = await handleMCPRequest(toolRequest('get_document_text', { documentId: document.documentId, tabId: 'child' }), 'test-token');
+    expect(await response.json()).toHaveProperty('error');
+    expect(exportText).not.toHaveBeenCalled();
+  });
+
+  it('passes a unique heading ID and selected tab without requiring heading text', async () => {
+    const read = vi.spyOn(GoogleDocsAPI.prototype, 'getContentUnderHeading').mockResolvedValue({ documentId: document.documentId, revisionId: 'revision', found: false, content: '' });
+    const response = await handleMCPRequest(toolRequest('get_content_under_heading', {
+      documentId: document.documentId, tabId: 'child', headingId: 'unique-heading',
+    }), 'test-token');
+    expect(await response.json()).toHaveProperty('result');
+    expect(read).toHaveBeenCalledWith(document.documentId, expect.objectContaining({ tabId: 'child', headingId: 'unique-heading' }));
+  });
+
   it('reports oversized extraction as an error instead of a partial successful tool result', async () => {
     vi.spyOn(GoogleDocsAPI.prototype, 'getDocumentSafe').mockResolvedValue({
       useFallback: false,

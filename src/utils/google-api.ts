@@ -13,6 +13,9 @@ import { searchDocuments } from '../api/search.js';
 import { extractTextFromDocument } from '../api/textExtraction.js';
 import { exportLargeDocumentAsText } from '../api/largeDoc.js';
 import { getDocumentTabs } from '../api/tabs.js';
+import { replaceSection, type ReplaceSectionArgs } from '../api/sections.js';
+import { exportDocument, type ExportDocumentArgs } from '../api/exports.js';
+import type { HeadingOptions } from '../api/headings.js';
 import {
   extractHeadingsFromDocument,
   getContentUnderHeading,
@@ -60,6 +63,14 @@ export class GoogleDocsAPI {
     return updateDocument(this.client, request);
   }
 
+  replaceSection(args: ReplaceSectionArgs) {
+    return replaceSection(this.client, args);
+  }
+
+  exportDocument(args: ExportDocumentArgs) {
+    return exportDocument(this.client, args);
+  }
+
   getDocumentSafe(documentId: string) {
     return getDocumentSafe(this.client, documentId);
   }
@@ -82,24 +93,20 @@ export class GoogleDocsAPI {
 
   // --- Text & heading extraction ---
 
-  extractTextFromDocument(document: DocumentContent): string {
-    return extractTextFromDocument(document);
+  extractTextFromDocument(document: DocumentContent, tabId?: string): string {
+    return extractTextFromDocument(document, tabId);
   }
 
   extractHeadingsFromDocument(
     document: DocumentContent,
-    options?: { includeText?: boolean; maxDepth?: number },
+    options?: { includeText?: boolean; maxDepth?: number; tabId?: string },
   ) {
     return extractHeadingsFromDocument(document, options);
   }
 
   getContentUnderHeading(
     documentId: string,
-    options: {
-      headingText: string;
-      headingLevel?: number;
-      matchMode?: 'exact' | 'contains' | 'starts_with';
-    },
+    options: HeadingOptions,
   ) {
     return getContentUnderHeading(this.client, documentId, options);
   }

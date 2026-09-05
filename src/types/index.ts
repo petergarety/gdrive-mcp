@@ -1,3 +1,5 @@
+import type { DocumentTab, StructuralElement } from '../api/types.js';
+
 export interface Env {
   // Google OAuth credentials
   GOOGLE_CLIENT_ID: string;
@@ -27,16 +29,11 @@ export interface GoogleDocumentInfo {
 export interface DocumentContent {
   documentId: string;
   title: string;
-  body: {
-    content: any[];
+  body?: {
+    content: StructuralElement[];
   };
-  revisionId: string;
-  tabs?: Array<{
-    tabId: string;
-    title?: string;
-    documentTab?: any;
-    [key: string]: any;
-  }>;
+  revisionId?: string;
+  tabs?: DocumentTab[];
 }
 
 export interface AuthContext {
@@ -47,7 +44,9 @@ export interface AuthContext {
 
 export interface DocUpdateRequest {
   documentId: string;
-  requests: any[];
+  requests: Array<Record<string, unknown>>;
+  tabId?: string;
+  requiredRevisionId?: string;
 }
 
 export interface DocCreateRequest {

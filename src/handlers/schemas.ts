@@ -21,6 +21,7 @@ export const GetDocumentSchema = z.object({
 
 export const GetDocumentTextSchema = z.object({
   documentId: z.string().min(1, 'documentId is required'),
+  tabId: z.string().min(1).optional(),
 });
 
 export const CreateDocumentSchema = z.object({
@@ -30,8 +31,10 @@ export const CreateDocumentSchema = z.object({
 
 export const UpdateDocumentSchema = z.object({
   documentId: z.string().min(1, 'documentId is required'),
-  // Google Docs batchUpdate request payloads — opaque to us, validated by the API.
-  operations: z.array(z.record(z.string(), z.unknown())).min(1, 'operations is required'),
+  tabId: z.string().min(1).optional(),
+  requiredRevisionId: z.string().min(1).optional(),
+  // Each operation is validated by the API adapter before any write is sent.
+  operations: z.array(z.record(z.string(), z.unknown())).min(1, 'operations is required').max(100),
 });
 
 export const SearchDocumentsSchema = z.object({
@@ -49,16 +52,19 @@ export const GetDocumentTabsSchema = z.object({
 
 export const GetDocumentHeadingsSchema = z.object({
   documentId: z.string().min(1, 'documentId is required'),
+  tabId: z.string().min(1).optional(),
   includeText: z.boolean().optional().default(true),
   maxDepth: z.number().int().min(1).max(6).optional().default(6),
 });
 
 export const GetContentUnderHeadingSchema = z.object({
   documentId: z.string().min(1, 'documentId is required'),
-  headingText: z.string().min(1, 'headingText is required'),
+  tabId: z.string().min(1).optional(),
+  headingId: z.string().min(1).optional(),
+  headingText: z.string().min(1).optional(),
   headingLevel: z.number().int().min(1).max(6).optional(),
   matchMode: z.enum(['exact', 'contains', 'starts_with']).optional().default('contains'),
-});
+}).refine(v => Boolean(v.headingId) !== Boolean(v.headingText), 'Provide exactly one of headingId or headingText');
 
 // Derived TypeScript types — these are what handlers receive.
 export type ListDocumentsArgs = z.infer<typeof ListDocumentsSchema>;

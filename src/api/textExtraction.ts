@@ -1,74 +1,41 @@
-import { DocumentContent } from '../types/index.js';
-import { ParagraphElement, StructuralElement, TableCell, TableRow } from './types.js';
+import type { DocumentContent } from '../types/index.js';
+import type { StructuralElement } from './types.js';
 import { MAX_PROCESSING_TIME_MS, MAX_TEXT_LENGTH } from './constants.js';
+import { selectTabs } from './structure.js';
 
-/**
- * Extract plain text from a Google Docs document.
- *
- * Walks the document's structural elements, paragraphs, and table cells.
- * Throws if extraction exceeds time or size limits so callers never mistake
- * a truncated result for the complete document.
- */
-export function extractTextFromDocument(document: DocumentContent): string {
+/** Read all selected tabs in preorder, never silently truncate or duplicate legacy body content. */
+export function extractTextFromDocument(document: DocumentContent, tabId?: string): string {
   const startTime = Date.now();
   let totalLength = 0;
-  const textChunks: string[] = [];
-  const maxDepth = 10;
-
-  const extractFromElement = (element: StructuralElement | ParagraphElement, depth = 0): void => {
-    if (Date.now() - startTime > MAX_PROCESSING_TIME_MS) {
-      throw new Error('Text extraction timeout - document too complex');
-    }
-    if (depth > maxDepth) return;
-
-    if ('textRun' in element && element.textRun?.content) {
-      const content = element.textRun.content;
-      if (content.length > MAX_TEXT_LENGTH - totalLength) {
-        throw new Error('Document text too large to process');
+  const chunks: string[] = [];
+  const append = (text: string): void => {
+    if (text.length > MAX_TEXT_LENGTH - totalLength) throw new Error('Document text too large to process');
+    totalLength += text.length;
+    chunks.push(text);
+  };
+  const visit = (elements: StructuralElement[], depth = 0): void => {
+    if (depth > 20) throw new Error('Document structure too deeply nested');
+    for (const element of elements) {
+      if (Date.now() - startTime > MAX_PROCESSING_TIME_MS) throw new Error('Text extraction timeout - document too complex');
+      for (const run of element.paragraph?.elements ?? []) append(run.textRun?.content ?? '');
+      for (const row of element.table?.tableRows ?? []) {
+        for (const cell of row.tableCells ?? []) visit(cell.content ?? [], depth + 1);
       }
-      totalLength += content.length;
-      textChunks.push(content);
-      return;
-    }
-
-    if ('paragraph' in element && element.paragraph?.elements) {
-      element.paragraph.elements.forEach((el) => extractFromElement(el, depth + 1));
-      return;
-    }
-
-    if ('table' in element && element.table) {
-      element.table.tableRows?.forEach((row: TableRow) => {
-        row.tableCells?.forEach((cell: TableCell) => {
-          cell.content?.forEach((cellEl: StructuralElement) =>
-            extractFromElement(cellEl, depth + 1),
-          );
-        });
-      });
+      if (element.tableOfContents) visit(element.tableOfContents.content ?? [], depth + 1);
     }
   };
-
   try {
-    document.body?.content?.forEach((el) => extractFromElement(el as StructuralElement));
-    return textChunks.join('');
+    const tabs = selectTabs(document, tabId);
+    tabs.forEach((tab, index) => {
+      if (index > 0) append('\n');
+      visit(tab.content);
+    });
+    return chunks.join('');
   } catch (error) {
-    if (process.env.MCP_DEBUG) {
-      console.error('[mcp][textExtraction] error:', error);
-    }
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    throw new Error('Failed to extract text from document: ' + message);
+    throw new Error('Failed to extract text from document: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
-/**
- * Extract text from a flat array of structural elements (already filtered).
- * Used by heading-content extraction.
- */
 export function extractTextFromElements(elements: StructuralElement[]): string {
-  let text = '';
-  for (const element of elements) {
-    element.paragraph?.elements?.forEach((el) => {
-      if (el.textRun?.content) text += el.textRun.content;
-    });
-  }
-  return text;
+  return extractTextFromDocument({ documentId: '', title: '', body: { content: elements } });
 }

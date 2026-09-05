@@ -7,7 +7,7 @@ export const getDocument: ToolHandler<GetDocumentArgs> = async (api, args) => {
     content: [
       {
         type: 'text',
-        text: `Document: ${document.title}\n\nContent:\n${JSON.stringify(document.body, null, 2)}`,
+        text: JSON.stringify(document, null, 2),
       },
     ],
   };

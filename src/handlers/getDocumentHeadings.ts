@@ -4,6 +4,7 @@ import { GetDocumentHeadingsArgs } from './schemas.js';
 export const getDocumentHeadings: ToolHandler<GetDocumentHeadingsArgs> = async (api, args) => {
   const document = await api.getDocument(args.documentId);
   const headings = api.extractHeadingsFromDocument(document, {
+    tabId: args.tabId,
     includeText: args.includeText,
     maxDepth: args.maxDepth,
   });
@@ -12,9 +13,11 @@ export const getDocumentHeadings: ToolHandler<GetDocumentHeadingsArgs> = async (
     content: [
       {
         type: 'text',
-        text:
-          `Document Headings:\n\n` +
-          headings.map((h) => `${'  '.repeat(h.level - 1)}${h.level}. ${h.text}`).join('\n'),
+        text: JSON.stringify({
+          documentId: args.documentId,
+          revisionId: document.revisionId,
+          headings,
+        }, null, 2),
       },
     ],
   };

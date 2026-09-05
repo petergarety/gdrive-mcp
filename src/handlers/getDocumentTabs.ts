@@ -7,9 +7,7 @@ export const getDocumentTabs: ToolHandler<GetDocumentTabsArgs> = async (api, arg
     content: [
       {
         type: 'text',
-        text:
-          `Document Tabs (${result.totalTabs}):\n\n` +
-          result.tabs.map((tab: any) => `• ${tab.title} (${tab.tabId})`).join('\n'),
+        text: JSON.stringify(result, null, 2),
       },
     ],
   };
