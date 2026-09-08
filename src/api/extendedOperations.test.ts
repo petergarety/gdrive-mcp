@@ -139,7 +139,7 @@ describe('bounded export groundwork', () => {
     });
     expect(fetch).toHaveBeenCalledOnce();
     expect(String(fetch.mock.calls[0][0])).toMatch(/^https:\/\/www\.googleapis\.com\/drive\/v3\/files\/doc\/export\?mimeType=/);
-    expect(fetch.mock.calls[0][1]).toMatchObject({ redirect: 'error', headers: { Authorization: 'Bearer test-token' } });
+    expect(fetch.mock.calls[0][1]).toMatchObject({ redirect: 'manual', headers: { Authorization: 'Bearer test-token' } });
   });
 
   it('fails closed on invalid UTF-8 instead of returning replacement characters', async () => {

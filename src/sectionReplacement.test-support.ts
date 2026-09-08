@@ -76,7 +76,7 @@ interface SectionTransport {
 export function registerSectionToolTests(transport: SectionTransport): void {
   it('advertises replace_section and its destructive/preview-first contract', async () => {
     const tools = await transport.list();
-    expect(tools).toHaveLength(11);
+    expect(tools).toHaveLength(12);
     expect(tools.find(tool => tool.name === 'replace_section')).toEqual(REPLACE_SECTION_TOOL);
     expect(transport.authenticated()).not.toHaveBeenCalled();
   });

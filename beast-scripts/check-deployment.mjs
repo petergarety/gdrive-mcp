@@ -10,6 +10,7 @@ import { Miniflare } from 'miniflare';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { EmptyResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { decodeExportResult } from './save-export.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = join(root, 'beast-output/deployment-check');
@@ -71,6 +72,8 @@ checks.push({ name: 'TypeScript compilation', passed: compileResult.status === 0
 checks.push({ name: 'Wrangler dry-run bundle', passed: bundleResult.status === 0,
   detail: bundleResult.error?.message ?? `exit=${bundleResult.status}; signal=${bundleResult.signal}` });
 let outboundCalls = 0;
+let exportFixture;
+let syntheticExportCalls = 0;
 let mf;
 async function check(name, action) {
   try {
@@ -106,7 +109,17 @@ try {
       bindings,
       kvNamespaces: ['TOKEN_STORE', 'CACHE'],
       kvPersist: false,
-      outboundService: () => {
+      outboundService: (request) => {
+        // Strict fixture matching; nothing is forwarded to the network.
+        if (exportFixture && request.method === 'GET' &&
+            request.url === `https://www.googleapis.com/drive/v3/files/local-export-fixture/export?${new URLSearchParams({ mimeType: exportFixture.mimeType })}` &&
+            request.headers.get('Authorization') === 'Bearer local-google-token-not-real') {
+          syntheticExportCalls++;
+          return new Response(exportFixture.bytes, { status: exportFixture.status ?? 200,
+            headers: { 'Content-Type': exportFixture.mimeType,
+              ...(exportFixture.location ? { Location: exportFixture.location } : {}) },
+          });
+        }
         outboundCalls++;
         return new Response('External network disabled by deployment check', { status: 503 });
       },
@@ -220,6 +233,34 @@ try {
         assert.equal(r.headers.get('Content-Type'), null);
       }
     });
+    await check('Malformed formatting is rejected before expired-token refresh', async () => {
+      for (const operation of [
+        { type: 'format_text', index: 1, endIndex: 5, style: {} },
+        { type: 'format_paragraph', index: 5, endIndex: 1, style: { alignment: 'CENTER' } },
+        { type: 'create_bullets', index: 1, endIndex: 5, preset: 'NUMBERED_DIGIT_ALPHA_ROMAN' },
+        { type: 'insert_image', index: 1, uri: 'data:image/png;base64,AAAA' },
+      ]) {
+        const r = await rpc('tools/call', 'invalid-formatting', {
+          name: 'update_document', arguments: {
+            documentId: 'local-document-not-real', tabId: 'child',
+            requiredRevisionId: 'local-revision', operations: [operation],
+          },
+        }, expiredBearer);
+        assert.equal(r.status, 200, r.text);
+        assert.equal(r.body.error?.code, ErrorCode.InvalidParams, r.text);
+      }
+    });
+    await check('Invalid exports are rejected before expired-token refresh', async () => {
+      for (const changes of [{ format: 'html' }, { tabId: 'child' }, { maxBytes: 0 }, { maxBytes: 10485761 }, { documentId: 'doc\n' }]) {
+        const r = await rpc('tools/call', 'invalid-export', {
+          name: 'export_document', arguments: { documentId: 'local-export-fixture', format: 'pdf', ...changes },
+        }, expiredBearer);
+        assert.equal(r.status, 200);
+        assert.equal(r.body.error?.code, ErrorCode.InvalidParams, r.text);
+      }
+      assert.equal(syntheticExportCalls, 0);
+      assert.equal(outboundCalls, 0);
+    });
     const client = new Client({ name: 'local-deployment-check', version: '1.0.0' });
     const transport = new StreamableHTTPClientTransport(new URL('https://local.test/mcp'), {
       requestInit: { headers: { Authorization: 'Bearer local-check-key' } },
@@ -231,9 +272,69 @@ try {
       await check('Installed MCP SDK connects and lists tools over HTTP', async () => {
         await client.connect(transport, { timeout: 5000 });
         const tools = await client.listTools();
-        assert.equal(tools.tools.length, 11);
+        assert.equal(tools.tools.length, 12);
         assert(tools.tools.some(tool => tool.name === 'replace_section'));
         return `${tools.tools.length} tools listed`;
+      });
+      await check('Bundled Worker publishes the bounded read-only export contract', async () => {
+        const { tools } = await client.listTools();
+        const tool = tools.find(tool => tool.name === 'export_document');
+        assert.deepEqual(tool?.inputSchema.properties?.format?.enum, ['markdown', 'text', 'pdf', 'docx']);
+        assert.equal(tool.inputSchema.additionalProperties, false);
+        assert.equal(tool.inputSchema.properties.maxBytes.maximum, 10485760);
+        assert.equal(tool.inputSchema.properties.maxBytes.default, 2097152);
+        assert.equal(tool.annotations?.readOnlyHint, true);
+        assert.equal(tool.annotations?.destructiveHint, false);
+      });
+      for (const [format, mimeType, binary] of [
+        ['markdown', 'text/markdown', false], ['text', 'text/plain', false],
+        ['pdf', 'application/pdf', true],
+        ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', true],
+      ]) {
+        await check(`Bundled Worker ${format} bytes survive SDK resource delivery`, async () => {
+          // Binary fixtures deliberately test transport bytes, not real document validity.
+          const bytes = binary ? Buffer.from([0, 255, 80, 75, 3, 4, 128]) : Buffer.from('\uFEFF# Café 😀\r\n');
+          const before = syntheticExportCalls;
+          exportFixture = { mimeType, bytes };
+          try {
+            const result = await client.callTool({ name: 'export_document', arguments: {
+              documentId: 'local-export-fixture', format, maxBytes: bytes.length,
+            } }, undefined, { timeout: 5000 });
+            const decoded = decodeExportResult(result);
+            assert.deepEqual(decoded.bytes, bytes);
+            assert.equal(decoded.metadata.format, format);
+            assert.equal(syntheticExportCalls, before + 1);
+          } finally { exportFixture = undefined; }
+        });
+      }
+      for (const [name, fixture, maxBytes, message] of [
+        ['rejects redirects without forwarding credentials', { bytes: Buffer.from('redirect'), status: 302, location: 'https://untrusted.test/token-sink' }, 100, /HTTP 302/],
+        ['rejects streamed overflow without partial output', { bytes: Buffer.from('abcd') }, 3, /no partial file/],
+      ]) {
+        await check(`Bundled Worker export ${name}`, async () => {
+          const before = syntheticExportCalls;
+          exportFixture = { mimeType: 'application/pdf', ...fixture };
+          try {
+            await assert.rejects(() => client.callTool({ name: 'export_document', arguments: {
+              documentId: 'local-export-fixture', format: 'pdf', maxBytes,
+            } }, undefined, { timeout: 5000 }),
+            error => error instanceof McpError && error.code === ErrorCode.InternalError && message.test(error.message));
+            assert.equal(syntheticExportCalls, before + 1);
+            assert.equal(outboundCalls, 0);
+          } finally { exportFixture = undefined; }
+        });
+      }
+      await check('Bundled Worker publishes all ten typed formatting operations', async () => {
+        const { tools } = await client.listTools();
+        const update = tools.find(tool => tool.name === 'update_document');
+        const variants = update?.inputSchema.properties?.operations?.items?.oneOf;
+        assert(Array.isArray(variants));
+        assert.deepEqual(variants.map(v => v.properties?.type?.const).filter(Boolean).sort(), [
+          'insert_text', 'insert_paragraph_break', 'delete_text', 'replace_text',
+          'format_text', 'format_paragraph', 'create_bullets', 'delete_bullets',
+          'insert_table', 'insert_image',
+        ].sort());
+        assert.equal(update.annotations?.destructiveHint, true);
       });
       await check('SDK receives MethodNotFound for inherited tool key', async () => {
         await assert.rejects(() => client.callTool({ name: 'constructor', arguments: {} }),
@@ -265,10 +366,11 @@ try {
   checks.push({ name: 'Local runtime harness', passed: false, detail: String(error?.stack ?? error) });
 } finally {
   await mf?.dispose();
-  checks.push({ name: 'No external Worker requests', passed: outboundCalls === 0, detail: `${outboundCalls} attempted` });
+  checks.push({ name: 'No unhandled external Worker requests', passed: outboundCalls === 0, detail: `${outboundCalls} blocked; ${syntheticExportCalls} synthetic export requests intercepted locally; no network forwarding` });
   const report = {
     createdAt: new Date().toISOString(),
     scope: 'Local build/bundle and synthetic workerd checks only. No deployment or live credentials.',
+    syntheticExportCalls,
     compatibilityDate, compatibilityFlags, checks,
     unverified: ['Live OAuth and refresh', 'Real KV bindings and secrets', 'Google Docs read/write/export', 'Production client connection'],
     references: [

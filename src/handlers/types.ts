@@ -1,9 +1,7 @@
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { GoogleDocsAPI } from '../utils/google-api.js';
 
-export interface ToolResponseContent {
-  type: 'text';
-  text: string;
-}
+export type ToolResponseContent = CallToolResult['content'][number];
 
 /**
  * Response shape returned by every tool handler.

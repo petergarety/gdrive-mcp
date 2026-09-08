@@ -1,7 +1,7 @@
 import { GoogleDocumentInfo, DocumentContent, DocCreateRequest, DocUpdateRequest } from '../types/index.js';
 import { ApiClient } from './client.js';
 import { requireRevision, selectWriteTab } from './structure.js';
-import { transformOperations } from './operations.js';
+import { transformOperations, UpdateDocumentSchema } from './operations.js';
 import {
   DOCUMENT_ID_PATTERN,
   MAX_DOCUMENT_SIZE,
@@ -146,11 +146,15 @@ export async function updateDocument(
   client: ApiClient,
   request: DocUpdateRequest,
 ): Promise<BatchUpdateResponse> {
-  const document = await getDocument(client, request.documentId);
-  const revision = requireRevision(document, request.requiredRevisionId);
-  const tab = selectWriteTab(document, request.tabId);
-  const transformedRequests = transformOperations(request.requests, tab.tabId);
-  return guardedBatchUpdate(client, request.documentId, transformedRequests, revision);
+  const args = UpdateDocumentSchema.parse({
+    documentId: request.documentId, tabId: request.tabId,
+    requiredRevisionId: request.requiredRevisionId, operations: request.requests,
+  });
+  const document = await getDocument(client, args.documentId);
+  const revision = requireRevision(document, args.requiredRevisionId);
+  const tab = selectWriteTab(document, args.tabId);
+  const transformedRequests = transformOperations(args.operations, tab.tabId);
+  return guardedBatchUpdate(client, args.documentId, transformedRequests, revision);
 }
 
 /** Internal-only writer: never retries a write or silently rebases stale indices. */

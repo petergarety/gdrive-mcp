@@ -9,6 +9,8 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { GoogleDocsAPI } from './utils/google-api.js';
 import { registerSectionToolTests } from './sectionReplacement.test-support.js';
+import { registerFormattingToolTests } from './formatting.test-support.js';
+import { registerExportToolTests } from './export.test-support.js';
 
 const fixture = vi.hoisted(() => ({ envPath: '' }));
 
@@ -53,6 +55,32 @@ describe('stdio environment loading', () => {
   });
 });
 
+describe('exports through production stdio dispatch over in-memory SDK transport', () => {
+  let client: Client;
+  let sdkServer: Server;
+  let authenticate: MockInstance<() => Promise<string>>;
+  beforeEach(async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unexpected network access in export test'));
+    const app = new GoogleDocsMCPServer();
+    const internals = app as unknown as { server: Server; getAccessToken(): Promise<string> };
+    authenticate = vi.spyOn(internals, 'getAccessToken').mockResolvedValue('test-token');
+    sdkServer = internals.server;
+    client = new Client({ name: 'export-stdio-test', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await sdkServer.connect(serverTransport);
+    await client.connect(clientTransport);
+  });
+  afterEach(async () => {
+    try { await client?.close(); await sdkServer?.close(); }
+    finally { vi.restoreAllMocks(); }
+  });
+  registerExportToolTests({
+    call: args => client.callTool({ name: 'export_document', arguments: args }),
+    list: async () => (await client.listTools()).tools,
+    authenticated: () => authenticate,
+  });
+});
+
 describe('stdio tool dispatch regressions', () => {
   let client: Client;
   let sdkServer: Server;
@@ -85,6 +113,12 @@ describe('stdio tool dispatch regressions', () => {
 
   registerSectionToolTests({
     call: args => client.callTool({ name: 'replace_section', arguments: args }),
+    list: async () => (await client.listTools()).tools,
+    authenticated: () => authenticate,
+  });
+
+  registerFormattingToolTests({
+    call: args => client.callTool({ name: 'update_document', arguments: args }),
     list: async () => (await client.listTools()).tools,
     authenticated: () => authenticate,
   });

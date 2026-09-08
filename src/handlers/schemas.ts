@@ -1,8 +1,11 @@
 import { z } from 'zod';
 import { ReplaceSectionSchema } from '../api/sections.js';
+import { UpdateDocumentSchema } from '../api/operations.js';
+import { ExportDocumentSchema } from '../api/exports.js';
 
-export { ReplaceSectionSchema };
+export { ReplaceSectionSchema, UpdateDocumentSchema, ExportDocumentSchema };
 export type { ReplaceSectionArgs } from '../api/sections.js';
+export type { ExportDocumentArgs } from '../api/exports.js';
 
 /**
  * Runtime validation + TypeScript types for every tool's arguments.
@@ -31,14 +34,6 @@ export const GetDocumentTextSchema = z.object({
 export const CreateDocumentSchema = z.object({
   title: z.string().min(1, 'title is required'),
   content: z.string().optional(),
-});
-
-export const UpdateDocumentSchema = z.object({
-  documentId: z.string().min(1, 'documentId is required'),
-  tabId: z.string().min(1).optional(),
-  requiredRevisionId: z.string().min(1).optional(),
-  // Each operation is validated by the API adapter before any write is sent.
-  operations: z.array(z.record(z.string(), z.unknown())).min(1, 'operations is required').max(100),
 });
 
 export const SearchDocumentsSchema = z.object({
@@ -99,6 +94,7 @@ export const SCHEMAS = {
   get_document_headings: GetDocumentHeadingsSchema,
   get_content_under_heading: GetContentUnderHeadingSchema,
   replace_section: ReplaceSectionSchema,
+  export_document: ExportDocumentSchema,
 } as const;
 
 export type SchemaName = keyof typeof SCHEMAS;

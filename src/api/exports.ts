@@ -10,15 +10,17 @@ export const EXPORT_FORMATS = {
   docx: { mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', extension: 'docx', binary: true },
 } as const;
 export const MAX_EXPORT_BYTES = 10 * 1024 * 1024;
+export const DEFAULT_EXPORT_BYTES = 2 * 1024 * 1024;
+export const EXPORT_DOCUMENT_ID_PATTERN = '^[a-zA-Z0-9_-]+(?![\\s\\S])';
 export const ExportDocumentSchema = z.object({
-  documentId: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+  documentId: z.string().regex(new RegExp(EXPORT_DOCUMENT_ID_PATTERN)),
   format: z.enum(['markdown', 'text', 'pdf', 'docx']),
-  maxBytes: z.number().int().min(1).max(MAX_EXPORT_BYTES).default(2 * 1024 * 1024),
+  maxBytes: z.number().int().min(1).max(MAX_EXPORT_BYTES).default(DEFAULT_EXPORT_BYTES),
 }).strict();
 export type ExportDocumentArgs = z.infer<typeof ExportDocumentSchema>;
 
 /** Stream-bounded, never truncated; deadline remains active until the body finishes. */
-export async function readLimitedBytes(response: Response, maxBytes: number): Promise<Uint8Array> {
+export async function readLimitedBytes(response: Response, maxBytes: number): Promise<Uint8Array<ArrayBuffer>> {
   const length = Number(response.headers.get('content-length'));
   if (length > maxBytes) {
     await response.body?.cancel();
@@ -54,7 +56,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(parts.join(''));
 }
 
-export async function exportDocument(client: ApiClient, raw: ExportDocumentArgs) {
+export async function exportDocument(client: ApiClient, raw: z.input<typeof ExportDocumentSchema>) {
   const args = ExportDocumentSchema.parse(raw);
   assertValidDocumentId(args.documentId);
   const format = EXPORT_FORMATS[args.format];
@@ -63,19 +65,22 @@ export async function exportDocument(client: ApiClient, raw: ExportDocumentArgs)
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), EXPORT_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { signal: controller.signal, redirect: 'error', headers: { Authorization: `Bearer ${client.token}` } });
+    // Workers does not support redirect:'error'. Never follow redirects with a bearer token.
+    const response = await fetch(url, { signal: controller.signal, redirect: 'manual', headers: { Authorization: `Bearer ${client.token}` } });
     if (!response.ok) {
       await response.body?.cancel();
       if (response.status === 429) throw new Error('Export rate limit exceeded. Try again later.');
       throw new Error(`Google export failed (HTTP ${response.status}); check permission, format and the 10 MB Drive export limit`);
     }
     const bytes = await readLimitedBytes(response, args.maxBytes);
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
     return {
       documentId: args.documentId, filename: `${args.documentId}.${format.extension}`,
       mimeType: format.mimeType, byteLength: bytes.byteLength,
+      sha256: Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join(''),
       encoding: format.binary ? 'base64' as const : 'utf-8' as const,
-      data: format.binary ? bytesToBase64(bytes) : new TextDecoder('utf-8', { fatal: true }).decode(bytes),
-      scope: 'Google-native document export; per-tab export is not supported by this tool.',
+      data: format.binary ? bytesToBase64(bytes) : new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes),
+      scope: 'Google-native export; no per-tab selection. Multi-tab inclusion/order is not live-verified; do not assume all tabs are included.',
     };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw new Error('Export timed out; no partial file returned');

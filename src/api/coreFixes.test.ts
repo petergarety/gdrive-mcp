@@ -232,9 +232,9 @@ describe('core release tool registry', () => {
     const names = GDOCS_TOOLS.map(tool => tool.name).sort();
     expect(names).toEqual(Object.keys(HANDLERS).sort());
     expect(names).toEqual(Object.keys(SCHEMAS).sort());
-    expect(names).toHaveLength(11);
+    expect(names).toHaveLength(12);
     expect(names).toContain('replace_section');
-    expect(names).not.toContain('export_document');
+    expect(names).toContain('export_document');
   });
 
   it('advertises tab selection and caller revision on update_document', () => {

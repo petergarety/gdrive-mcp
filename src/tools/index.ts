@@ -1,5 +1,7 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { REPLACE_SECTION_TOOL } from './replaceSection.js';
+import { UPDATE_DOCUMENT_TOOL } from './updateDocument.js';
+import { EXPORT_DOCUMENT_TOOL } from './exportDocument.js';
 
 export const GDOCS_TOOLS: Tool[] = [
   {
@@ -71,78 +73,7 @@ export const GDOCS_TOOLS: Tool[] = [
       required: ['title'],
     },
   },
-  {
-    name: 'update_document',
-    description: 'Apply 1-100 text operations in order. Read first and supply requiredRevisionId to reject stale edits. Multi-tab documents require tabId. Indices are UTF-16 offsets within that tab; each operation sees the result of preceding operations. Never retry blindly after a timeout.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        documentId: {
-          type: 'string',
-          description: 'The ID of the Google Doc to update',
-        },
-        tabId: {
-          type: 'string',
-          description: 'Target tab ID; mandatory for multi-tab documents',
-        },
-        requiredRevisionId: {
-          type: 'string',
-          description: 'Revision from your latest read. If omitted for compatibility, only changes after the server read are guarded, not changes since your earlier read.',
-        },
-        operations: {
-          type: 'array',
-          description: 'Array of update operations to perform',
-          minItems: 1,
-          maxItems: 100,
-          items: {
-            type: 'object',
-            properties: {
-              type: {
-                type: 'string',
-                enum: ['insert_text', 'replace_text', 'delete_text', 'insert_paragraph_break'],
-                description: 'Type of operation to perform',
-              },
-              index: {
-                type: 'integer',
-                minimum: 1,
-                description: 'Tab-local UTF-16 index; body text starts at 1. Required except for replace_text.',
-              },
-              text: {
-                type: 'string',
-                maxLength: 200000,
-                description: 'Text to insert or replacement text',
-              },
-              oldText: {
-                type: 'string',
-                minLength: 1,
-                maxLength: 200000,
-                description: 'Non-empty text to match for replace_text within the selected tab',
-              },
-              matchCase: {
-                type: 'boolean',
-                default: true,
-                description: 'Case-sensitive replacement matching',
-              },
-              endIndex: {
-                type: 'integer',
-                minimum: 1,
-                description: 'Exclusive end index for delete_text; defaults to index + 1',
-              },
-            },
-            required: ['type'],
-            additionalProperties: false,
-            oneOf: [
-              { properties: { type: { const: 'insert_text' } }, required: ['index', 'text'] },
-              { properties: { type: { const: 'replace_text' } }, required: ['oldText', 'text'] },
-              { properties: { type: { const: 'delete_text' } }, required: ['index'] },
-              { properties: { type: { const: 'insert_paragraph_break' } }, required: ['index'] },
-            ],
-          },
-        },
-      },
-      required: ['documentId', 'operations'],
-    },
-  },
+  UPDATE_DOCUMENT_TOOL,
   {
     name: 'search_documents',
     description: 'Search for Google Docs by content or title',
@@ -266,4 +197,5 @@ export const GDOCS_TOOLS: Tool[] = [
     },
   },
   REPLACE_SECTION_TOOL,
+  EXPORT_DOCUMENT_TOOL,
 ];

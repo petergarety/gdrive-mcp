@@ -2,12 +2,14 @@
 
 A Model Context Protocol (MCP) server that provides AI assistants with secure access to your Google Docs. Run it locally for personal use or deploy it to Cloudflare Workers for global scale.
 
-Project status and remaining work: [Roadmap](docs/ROADMAP.md). Section replacement workflow: [Preview and apply a section edit](docs/SECTION_EDITING.md).
+Project status and remaining work: [Roadmap](docs/ROADMAP.md). Guides: [Preview and apply a section edit](docs/SECTION_EDITING.md), [Rich formatting](docs/RICH_FORMATTING.md), and [Export and save files](docs/EXPORTS.md).
 
 ## ✨ Key Features
 
 - 📖 **Read Google Docs** content and metadata  
 - ✏️ **Create and Update** documents
+- **Rich formatting** — character/paragraph styles, lists, tables, and inline images (local source; not deployed)
+- **Export files** — Markdown, text, PDF, and DOCX as MCP embedded resources with an offline saving helper (local source; not deployed)
 - 🔍 **Search** through your documents
 - 📑 **Tab Detection** - identify tabs in multi-tab documents
 - 📋 **Heading Extraction** - extract document structure (H1-H6)
@@ -26,15 +28,20 @@ Project status and remaining work: [Roadmap](docs/ROADMAP.md). Section replaceme
 | `get_document` | Get full document content with formatting
 | `get_document_text` | Get plain text content of a document
 | `create_document` | Create a new Google Doc 
-| `update_document` | Update document content 
+| `update_document` | Update text, character/paragraph styles, lists, tables, and inline images (expanded contract integrated locally; see status below) |
 | `search_documents` | Search documents by content or title
 | `get_document_info` | Get document metadata
 | `get_document_tabs` | List tabs in a document
 | `get_document_headings` | Extract headings (H1-H6) from a document
 | `get_content_under_heading` | Get content under a specific heading
 | `replace_section` | Preview or apply a revision-checked, tab-scoped plain-text section replacement |
+| `export_document` | Export Markdown/text/PDF/DOCX as file metadata plus an embedded resource; see the saving guide (local source; not deployed) |
 
-`replace_section` is provided in this source tree but is not in the deployed `b69cce4` baseline. It defaults to preview; applying requires `dryRun: false` and a recent `requiredRevisionId`. Replacement includes subheadings and does not preserve formatting. Read the [section editing guide](docs/SECTION_EDITING.md) before use; live Google document validation and deployment approval remain outstanding.
+`replace_section` was deployed from commit `bd49a12` on September 5, 2026. It defaults to preview; applying requires `dryRun: false` and a recent `requiredRevisionId`. Replacement includes subheadings and does not preserve formatting. Read the [section editing guide](docs/SECTION_EDITING.md) before use. Public deployment checks passed, but authenticated Google document validation remains outstanding.
+
+The expanded `update_document` formatting contract is integrated and locally tested in the September 8, 2026 formatting/export source segment; see Git history for its exact commit. It is not pushed, deployed, or live-validated. Before this segment, Git inspection found formatting still uncommitted on top of `bd49a12`; the earlier claim of a completed separate formatting commit was incorrect. It writes immediately and rejects `dryRun`; supply the revision from your read and select a tab for multi-tab documents. The [rich formatting guide](docs/RICH_FORMATTING.md) covers operation examples, UTF-16 indices, limits, and the remaining live-validation checklist.
+
+`export_document` is integrated locally as tool 12. It returns versioned JSON file metadata and one embedded text/blob resource with a SHA-256 checksum, not a browser URL. The [export guide](docs/EXPORTS.md) documents the complete contract and [`beast-scripts/save-export.mjs`](beast-scripts/save-export.mjs) for validated, non-overwriting file saves. The default export limit is 2 MiB; there is no per-tab selection or verified all-tabs guarantee. Export integration is included in this local source segment, but remains unpushed, undeployed, and not live-validated. Production remains the recorded 11-tool section release; committing or testing local source does not deploy it.
 
 ## 🚀 Quick Start
 
@@ -231,8 +238,10 @@ Choose your deployment method - these are **two completely separate approaches**
    - Developer contact: your email
 4. Add scopes:
    - `https://www.googleapis.com/auth/documents`
-   - `https://www.googleapis.com/auth/drive`
+   - `https://www.googleapis.com/auth/drive.readonly`
    - `openid`, `profile`, `email`
+
+These are the scopes requested by the Worker code. Local service-account authorization above separately requests `documents` + `drive`. Export integration makes no OAuth scope change or token migration; existing granted scopes and file permissions still require validation.
 
 ### 2. Create OAuth Credentials
 

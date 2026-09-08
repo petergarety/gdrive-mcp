@@ -327,7 +327,7 @@ describe('MCP HTTP transport regressions', () => {
     client.onerror = (error) => errors.push(error);
     try {
       await client.connect(transport, { timeout: 1000 });
-      expect((await client.listTools()).tools).toHaveLength(11);
+      expect((await client.listTools()).tools).toHaveLength(12);
       expect(await client.ping()).toEqual({});
       for (const name of ['missing_tool', 'constructor', '__proto__']) {
         await expect(client.callTool({ name, arguments: {} })).rejects.toMatchObject({
