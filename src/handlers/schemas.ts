@@ -37,7 +37,10 @@ export const CreateDocumentSchema = z.object({
 });
 
 export const SearchDocumentsSchema = z.object({
-  query: z.string().min(1, 'query is required'),
+  query: z.string().min(1, 'query is required').refine(
+    value => value.trim().length > 0,
+    'query must contain at least one non-whitespace character',
+  ),
   pageSize: z.number().int().min(1).max(100).optional(),
   pageToken: z.string().optional(),
 });

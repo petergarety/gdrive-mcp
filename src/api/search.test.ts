@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient } from './client.js';
-import { searchDocuments } from './search.js';
+import { searchDocuments, toDriveQueryLiteral } from './search.js';
 import { toDocumentPage, toDocumentSummary } from '../handlers/documentSummary.js';
 import type { GoogleDocumentInfo } from '../types/index.js';
 
@@ -43,6 +43,56 @@ describe('searchDocuments Drive request', () => {
     expect(url.searchParams.has('pageToken')).toBe(false);
     expect(url.searchParams.get('pageSize')).toBe('10');
     expect(result).toEqual({ files: [], nextPageToken: undefined });
+  });
+});
+
+describe('search query handling', () => {
+  const prefix = "mimeType='application/vnd.google-apps.document' and fullText contains ";
+
+  async function sentQuery(query: string): Promise<string | null> {
+    const client = new ApiClient('test-token');
+    const request = vi.spyOn(client, 'request').mockResolvedValueOnce({ files: [] });
+    await searchDocuments(client, query);
+    return new URL(String(request.mock.calls[0][0])).searchParams.get('q');
+  }
+
+  it.each([
+    ['punctuation', 'Q3-report (final), v2.1 & notes!', 'Q3-report (final), v2.1 & notes!'],
+    ['programming terms', 'C++ / C# @mentions #tags', 'C++ / C# @mentions #tags'],
+    ['accented Latin', 'café Müller São Paulo', 'café Müller São Paulo'],
+    ['Cyrillic', 'отчёт за квартал', 'отчёт за квартал'],
+    ['Japanese', '会議の議事録', '会議の議事録'],
+    ['Arabic', 'تقرير', 'تقرير'],
+    ['emoji', 'launch 🚀 plan', 'launch 🚀 plan'],
+    ['double-quoted phrase', 'Q3 "annual report"', 'Q3 "annual report"'],
+    ['apostrophe', "it's Peter's doc", "it\\'s Peter\\'s doc"],
+    ['backslash', 'C:\\temp\\notes', 'C:\\\\temp\\\\notes'],
+    ['backslash before quote', "a\\'b", "a\\\\\\'b"],
+    ['decomposed accent', 'cafe\u0301', 'café'],
+    ['whitespace and control characters', '  budget\n\t2026\u0000plan  ', 'budget 2026 plan'],
+  ])('keeps %s intact', async (_label, input, expected) => {
+    expect(toDriveQueryLiteral(input)).toBe(expected);
+    expect(await sentQuery(input)).toBe(`${prefix}'${expected}'`);
+  });
+
+  it('regression: non-English-only text no longer collapses to an empty search', async () => {
+    // The old code replaced every non-ASCII character with a space, so this
+    // became fullText contains '   ' instead of searching for the words.
+    expect(await sentQuery('日本語')).toBe(`${prefix}'日本語'`);
+  });
+
+  it('regression: an apostrophe is escaped instead of removed', async () => {
+    // The old code escaped the quote and then stripped the backslash and the
+    // quote, sending "it s" instead of the escaped "it\'s".
+    expect(await sentQuery("it's")).toBe(`${prefix}'it\\'s'`);
+  });
+
+  it.each(['', '   ', '\n\t', '\u0000'])('rejects whitespace-only query %j without calling Drive', async query => {
+    const client = new ApiClient('test-token');
+    const request = vi.spyOn(client, 'request');
+
+    await expect(searchDocuments(client, query)).rejects.toThrow('at least one non-whitespace character');
+    expect(request).not.toHaveBeenCalled();
   });
 });
 

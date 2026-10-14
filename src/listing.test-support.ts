@@ -127,6 +127,8 @@ export function registerListingToolTests(transport: ListingTransport): void {
     ['list_documents', { pageToken: 7 }],
     ['list_documents', { pageSize: 101 }],
     ['search_documents', { query: '' }],
+    ['search_documents', { query: '   ' }],
+    ['search_documents', { query: '\n\t' }],
     ['search_documents', { query: 'x', pageToken: 7 }],
     ['search_documents', { query: 'x', pageSize: 0 }],
     ['get_document_info', {}],

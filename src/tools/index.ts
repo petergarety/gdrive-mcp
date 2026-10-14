@@ -82,7 +82,9 @@ export const GDOCS_TOOLS: Tool[] = [
       properties: {
         query: {
           type: 'string',
-          description: 'Search query to find documents',
+          description: 'Text to find in document titles and content. Punctuation and non-English characters are searched as typed; must contain at least one non-whitespace character',
+          minLength: 1,
+          pattern: '\\S',
         },
         pageSize: {
           type: 'number',
