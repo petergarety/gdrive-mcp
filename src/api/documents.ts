@@ -57,27 +57,34 @@ export async function getDocumentInfo(
 
 /**
  * Check document size via metadata before fetching full content.
- * Returns size in bytes (0 if metadata unavailable).
+ * Returns size in bytes (0 if metadata or size is unavailable).
+ *
+ * Metadata failures are tolerated so a read can still be attempted, but an
+ * oversized document is always rejected. The size check sits outside the
+ * metadata try/catch so the rejection can't be swallowed.
  */
 export async function checkDocumentSize(
   client: ApiClient,
   documentId: string,
 ): Promise<number> {
+  let info: GoogleDocumentInfo;
   try {
-    const info = await getDocumentInfo(client, documentId);
-    const size = info.size ? parseInt(info.size) : 0;
-    if (size > MAX_DOCUMENT_SIZE) {
-      throw new Error(
-        `Document too large: ${Math.round(size / 1024 / 1024)}MB (max: ${MAX_DOCUMENT_SIZE / 1024 / 1024}MB)`,
-      );
-    }
-    return size;
+    info = await getDocumentInfo(client, documentId);
   } catch (error) {
     if (process.env.MCP_DEBUG) {
       console.error('[mcp][documents] could not check document size:', error);
     }
     return 0;
   }
+
+  const size = info.size ? Number.parseInt(info.size, 10) : 0;
+  if (!Number.isFinite(size)) return 0;
+  if (size > MAX_DOCUMENT_SIZE) {
+    throw new Error(
+      `Document too large: ${Math.round(size / 1024 / 1024)}MB (max: ${MAX_DOCUMENT_SIZE / 1024 / 1024}MB)`,
+    );
+  }
+  return size;
 }
 
 /**

@@ -18,7 +18,7 @@ export const GDOCS_TOOLS: Tool[] = [
         },
         pageToken: {
           type: 'string',
-          description: 'Token for pagination to get next page of results',
+          description: 'Continuation token from a previous list_documents response, to get the next page of results',
         },
       },
     },
@@ -86,9 +86,9 @@ export const GDOCS_TOOLS: Tool[] = [
         },
         pageSize: {
           type: 'number',
-          description: 'Number of results to return (default: 10, max: 50)',
+          description: 'Number of results to return (default: 10, max: 100)',
           minimum: 1,
-          maximum: 50,
+          maximum: 100,
         },
       },
       required: ['query'],
