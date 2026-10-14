@@ -13,6 +13,9 @@ import { SCHEMAS } from '../handlers/schemas.js';
  *   1. list_documents never returned Drive's nextPageToken.
  *   2. search_documents advertised a smaller pageSize maximum than it accepted.
  *   3. checkDocumentSize swallowed its own "Document too large" rejection.
+ *
+ * list_documents now returns JSON (see listing.test-support.ts for the full
+ * contract through both transports); these tests keep the pagination fix.
  */
 
 beforeEach(() => {
@@ -25,10 +28,10 @@ afterEach(() => {
   expect(calls).toBe(0);
 });
 
-function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
+function jsonOf(result: { content: Array<{ type: string; text?: string }> }): Record<string, unknown> {
   expect(result.content).toHaveLength(1);
   expect(result.content[0].type).toBe('text');
-  return result.content[0].text ?? '';
+  return JSON.parse(result.content[0].text ?? '');
 }
 
 describe('list_documents pagination', () => {
@@ -41,23 +44,27 @@ describe('list_documents pagination', () => {
     const api = new GoogleDocsAPI('test-token');
     const list = vi.spyOn(api, 'listDocuments').mockResolvedValue({ files: page, nextPageToken: 'token-page-2' } as never);
 
-    const text = textOf(await listDocumentsHandler(api, { pageSize: 2 }));
+    const body = jsonOf(await listDocumentsHandler(api, { pageSize: 2 }));
 
     expect(list).toHaveBeenCalledWith(2, undefined);
-    expect(text).toContain('Found 2 documents:');
-    expect(text).toContain('• First (doc-1)');
-    expect(text).toContain('• Second (doc-2)');
-    expect(text).toContain('pageToken: token-page-2');
+    expect(body).toEqual({
+      documents: [{ id: 'doc-1', name: 'First' }, { id: 'doc-2', name: 'Second' }],
+      count: 2,
+      nextPageToken: 'token-page-2',
+    });
   });
 
-  it('omits the continuation hint on the last page', async () => {
+  it('omits nextPageToken on the last page', async () => {
     const api = new GoogleDocsAPI('test-token');
     vi.spyOn(api, 'listDocuments').mockResolvedValue({ files: page } as never);
 
-    const text = textOf(await listDocumentsHandler(api, {}));
+    const body = jsonOf(await listDocumentsHandler(api, {}));
 
-    expect(text).toBe('Found 2 documents:\n\n• First (doc-1)\n• Second (doc-2)');
-    expect(text).not.toContain('pageToken');
+    expect(body).toEqual({
+      documents: [{ id: 'doc-1', name: 'First' }, { id: 'doc-2', name: 'Second' }],
+      count: 2,
+    });
+    expect(body).not.toHaveProperty('nextPageToken');
   });
 
   it('returns the continuation token on an empty page that has more results', async () => {
@@ -65,11 +72,9 @@ describe('list_documents pagination', () => {
     const api = new GoogleDocsAPI('test-token');
     vi.spyOn(api, 'listDocuments').mockResolvedValue({ files: [], nextPageToken: 'token-page-2' } as never);
 
-    const text = textOf(await listDocumentsHandler(api, { pageToken: 'token-page-1' }));
+    const body = jsonOf(await listDocumentsHandler(api, { pageToken: 'token-page-1' }));
 
-    expect(text).toContain('Found 0 documents:');
-    expect(text).not.toContain('•');
-    expect(text).toContain('pageToken: token-page-2');
+    expect(body).toEqual({ documents: [], count: 0, nextPageToken: 'token-page-2' });
   });
 
   it('passes a caller pageToken through to the handler API call', async () => {

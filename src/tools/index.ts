@@ -6,7 +6,7 @@ import { EXPORT_DOCUMENT_TOOL } from './exportDocument.js';
 export const GDOCS_TOOLS: Tool[] = [
   {
     name: 'list_documents',
-    description: 'List Google Docs in the user\'s Drive',
+    description: 'List Google Docs in the user\'s Drive. Returns JSON { documents, count, nextPageToken? }; pass nextPageToken back as pageToken for the next page (absent on the last page).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -76,7 +76,7 @@ export const GDOCS_TOOLS: Tool[] = [
   UPDATE_DOCUMENT_TOOL,
   {
     name: 'search_documents',
-    description: 'Search for Google Docs by content or title',
+    description: 'Search for Google Docs by content or title. Returns JSON { query, documents, count, nextPageToken? }; for the next page, repeat the same query and pageSize with pageToken.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -90,13 +90,17 @@ export const GDOCS_TOOLS: Tool[] = [
           minimum: 1,
           maximum: 100,
         },
+        pageToken: {
+          type: 'string',
+          description: 'Continuation token from a previous search_documents response with the same query, to get the next page of results',
+        },
       },
       required: ['query'],
     },
   },
   {
     name: 'get_document_info',
-    description: 'Get metadata about a Google Doc (without full content)',
+    description: 'Get metadata about a Google Doc (without full content). Returns JSON { id, name, mimeType, createdTime, modifiedTime, webViewLink, size?, parents? }; unset fields are omitted.',
     inputSchema: {
       type: 'object',
       properties: {

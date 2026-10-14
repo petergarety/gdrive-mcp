@@ -4,25 +4,33 @@ import { ApiClient } from './client.js';
 /**
  * Drive API: search docs by name/content.
  * Escapes single quotes and strips special chars from the query.
+ *
+ * Pass the `nextPageToken` from a previous call as `pageToken` (with the same
+ * query and page size) to get the next page.
  */
 export async function searchDocuments(
   client: ApiClient,
   query: string,
   pageSize: number = 10,
-): Promise<GoogleDocumentInfo[]> {
+  pageToken?: string,
+): Promise<{ files: GoogleDocumentInfo[]; nextPageToken?: string }> {
   const escapedQuery = query.replace(/'/g, "\\'").replace(/[^a-zA-Z0-9\s]/g, ' ');
   const params = new URLSearchParams({
     q: `mimeType='application/vnd.google-apps.document'`,
     pageSize: pageSize.toString(),
-    fields: 'files(id,name,mimeType,createdTime,modifiedTime,webViewLink,size,parents)',
+    fields: 'files(id,name,mimeType,createdTime,modifiedTime,webViewLink,size,parents),nextPageToken',
   });
 
   if (query.trim()) {
     // Use set() — append() would add a SECOND q parameter and Drive API would receive duplicate q= values.
     params.set('q', `${params.get('q')} and fullText contains '${escapedQuery}'`);
   }
+  if (pageToken) params.set('pageToken', pageToken);
 
   const url = `https://www.googleapis.com/drive/v3/files?${params}`;
-  const response = await client.request<{ files?: GoogleDocumentInfo[] }>(url);
-  return response.files ?? [];
+  const response = await client.request<{ files?: GoogleDocumentInfo[]; nextPageToken?: string }>(url);
+  return {
+    files: response.files ?? [],
+    nextPageToken: response.nextPageToken,
+  };
 }

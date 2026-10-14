@@ -39,6 +39,7 @@ export const CreateDocumentSchema = z.object({
 export const SearchDocumentsSchema = z.object({
   query: z.string().min(1, 'query is required'),
   pageSize: z.number().int().min(1).max(100).optional(),
+  pageToken: z.string().optional(),
 });
 
 export const GetDocumentInfoSchema = z.object({

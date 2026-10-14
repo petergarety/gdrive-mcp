@@ -11,6 +11,7 @@ import { GoogleDocsAPI } from './utils/google-api.js';
 import { registerSectionToolTests } from './sectionReplacement.test-support.js';
 import { registerFormattingToolTests } from './formatting.test-support.js';
 import { registerExportToolTests } from './export.test-support.js';
+import { registerListingToolTests } from './listing.test-support.js';
 
 const fixture = vi.hoisted(() => ({ envPath: '' }));
 
@@ -119,6 +120,12 @@ describe('stdio tool dispatch regressions', () => {
 
   registerFormattingToolTests({
     call: args => client.callTool({ name: 'update_document', arguments: args }),
+    list: async () => (await client.listTools()).tools,
+    authenticated: () => authenticate,
+  });
+
+  registerListingToolTests({
+    call: (name, args) => client.callTool({ name, arguments: args }),
     list: async () => (await client.listTools()).tools,
     authenticated: () => authenticate,
   });

@@ -37,6 +37,12 @@ A Model Context Protocol (MCP) server that provides AI assistants with secure ac
 
 ### 📝 Usage Notes
 
+- **Listing, search, and metadata (`list_documents`, `search_documents`, `get_document_info`)** return JSON serialized as a string in the result's single text item, `content[0].text`. Parse it with `JSON.parse`; these tools don't use MCP `structuredContent`.
+  - Each document includes `id`, `name`, `mimeType`, `createdTime`, `modifiedTime`, `webViewLink`, and, when Drive reports them, `size` and `parents`. Fields with no value are omitted rather than `null`.
+  - `get_document_info` returns one document object.
+  - `list_documents` returns `{ documents, count, nextPageToken? }`.
+  - `search_documents` returns `{ query, documents, count, nextPageToken? }`, where `query` echoes your search text as sent.
+  - `count` is the number of documents **on this page**, not the total number of matches. To get the next page, call again with the same arguments plus `pageToken`. `nextPageToken` is absent on the last page, and a page can be empty while still carrying a token.
 - **Section replacement (`replace_section`)** previews by default. To apply, pass `dryRun: false` with the `requiredRevisionId` from your latest read. The replacement covers everything under the heading, including subheadings, and is written as plain text, so existing formatting is not preserved.
 - **Formatting (`update_document`)** writes immediately; there is no preview mode. Positions are UTF-16 indices. Pass the `requiredRevisionId` from your read so edits are rejected if the document changed in the meantime.
 - **Multi-tab documents:** pass a `tabId` (from `get_document_tabs`) for any write.

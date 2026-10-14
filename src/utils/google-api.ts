@@ -41,8 +41,8 @@ export class GoogleDocsAPI {
     return listDocuments(this.client, pageSize, pageToken);
   }
 
-  searchDocuments(query: string, pageSize?: number) {
-    return searchDocuments(this.client, query, pageSize);
+  searchDocuments(query: string, pageSize?: number, pageToken?: string) {
+    return searchDocuments(this.client, query, pageSize, pageToken);
   }
 
   // --- Document CRUD ---
