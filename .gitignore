@@ -69,3 +69,14 @@ mcp-config.json
 test-credentials/
 test-tokens/
 wrangler.toml
+
+# Private project documentation (roadmap, guides) — kept local, not published
+docs/
+
+# Generated local evidence, reports, and run logs
+beast-output/
+beast-runs/
+
+# Retired tooling (removed; ignore if regenerated)
+SPARE.md
+.spare/
